@@ -1,0 +1,7 @@
+# database connection details
+springpw.php
+
+# mediawiki
+/mediawiki/images
+/mediawiki/tests
+
