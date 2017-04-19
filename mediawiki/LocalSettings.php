@@ -181,7 +181,7 @@ $wgAuth_Config['MySQL_Database']    = $spring_dbname;       // phpBB MySQL Datab
 $wgAuth_Config['UserTB']         = 'phpbb3_users';       // Name of your PHPBB user table. (i.e. phpbb_users)
 $wgAuth_Config['GroupsTB']       = 'phpbb3_groups';      // Name of your PHPBB groups table. (i.e. phpbb_groups)
 $wgAuth_Config['User_GroupTB']   = 'phpbb3_user_group';  // Name of your PHPBB user_group table. (i.e. phpbb_user_group)
-$wgAuth_Config['PathToPHPBB']    = '../phpbb/';         // Path from this file to your phpBB install.
+$wgAuth_Config['PathToPHPBB']    = $spring_phpbb_path;         // Path from this file to your phpBB install.
 
 // Local
 $wgAuth_Config['LoginMessage']   = '<b>You need a <u>phpBB</u> account to login.</b><br /><a href="' . $wgAuth_Config['PathToPHPBB'] .
