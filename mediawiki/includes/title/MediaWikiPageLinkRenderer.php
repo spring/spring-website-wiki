@@ -21,14 +21,15 @@
  * @license GPL 2+
  * @author Daniel Kinzler
  */
+use MediaWiki\Linker\LinkTarget;
 
 /**
  * A service for generating links from page titles.
  *
  * @see https://www.mediawiki.org/wiki/Requests_for_comment/TitleValue
+ * @since 1.23
  */
 class MediaWikiPageLinkRenderer implements PageLinkRenderer {
-
 	/**
 	 * @var TitleFormatter
 	 */
@@ -46,7 +47,7 @@ class MediaWikiPageLinkRenderer implements PageLinkRenderer {
 	 * HtmlPageLinkRenderer, we will be using them, so it seems prudent to
 	 * already declare the dependency and inject them.
 	 *
-	 * @param TitleFormatter $formatter formatter for generating the target title string
+	 * @param TitleFormatter $formatter Formatter for generating the target title string
 	 * @param string $baseUrl (currently unused, pending refactoring of Linker).
 	 *        Defaults to $wgArticlePath.
 	 */
@@ -62,14 +63,14 @@ class MediaWikiPageLinkRenderer implements PageLinkRenderer {
 	/**
 	 * Returns the (partial) URL for the given page (including any section identifier).
 	 *
-	 * @param TitleValue $page The link's target
-	 * @param array $params any additional URL parameters.
+	 * @param LinkTarget $page The link's target
+	 * @param array $params Any additional URL parameters.
 	 *
 	 * @return string
 	 */
-	public function getPageUrl( TitleValue $page, $params = array() ) {
-		//TODO: move the code from Linker::linkUrl here!
-		//The below is just a rough estimation!
+	public function getPageUrl( LinkTarget $page, $params = [] ) {
+		// TODO: move the code from Linker::linkUrl here!
+		// The below is just a rough estimation!
 
 		$name = $this->formatter->getPrefixedText( $page );
 		$name = str_replace( ' ', '_', $name );
@@ -93,33 +94,35 @@ class MediaWikiPageLinkRenderer implements PageLinkRenderer {
 	/**
 	 * Returns an HTML link to the given page, using the given surface text.
 	 *
-	 * @param TitleValue $page The link's target
+	 * @param LinkTarget $linkTarget The link's target
 	 * @param string $text The link's surface text (will be derived from $page if not given).
 	 *
 	 * @return string
 	 */
-	public function renderHtmlLink( TitleValue $page, $text = null ) {
+	public function renderHtmlLink( LinkTarget $linkTarget, $text = null ) {
 		if ( $text === null ) {
-			$text = $this->formatter->getFullText( $page );
+			$text = $this->formatter->getFullText( $linkTarget );
 		}
 
 		// TODO: move the logic implemented by Linker here,
 		// using $this->formatter and $this->baseUrl, and
 		// re-implement Linker to use a HtmlPageLinkRenderer.
-		$title = Title::newFromTitleValue( $page );
+
+		$title = Title::newFromLinkTarget( $linkTarget );
 		$link = Linker::link( $title, htmlspecialchars( $text ) );
+
 		return $link;
 	}
 
 	/**
 	 * Returns a wikitext link to the given page, using the given surface text.
 	 *
-	 * @param TitleValue $page The link's target
+	 * @param LinkTarget $page The link's target
 	 * @param string $text The link's surface text (will be derived from $page if not given).
 	 *
 	 * @return string
 	 */
-	public function renderWikitextLink( TitleValue $page, $text = null ) {
+	public function renderWikitextLink( LinkTarget $page, $text = null ) {
 		if ( $text === null ) {
 			$text = $this->formatter->getFullText( $page );
 		}

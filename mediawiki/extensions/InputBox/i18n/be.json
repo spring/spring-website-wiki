@@ -1,6 +1,9 @@
 {
-    "@metadata": {
-        "authors": []
-    },
-    "createarticle": "Пачаць артыкул"
+	"@metadata": {
+		"authors": [
+			"Чаховіч Уладзіслаў"
+		]
+	},
+	"inputbox-tryexact": "Строгі пошук",
+	"inputbox-createarticle": "Пачаць артыкул"
 }

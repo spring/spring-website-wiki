@@ -1,8 +1,7 @@
 <?php
 /** Kannada (ಕನ್ನಡ)
  *
- * See MessagesQqq.php for message documentation incl. usage of parameters
- * To improve a translation please visit http://translatewiki.net
+ * To improve a translation please visit https://translatewiki.net
  *
  * @ingroup Language
  * @file
@@ -30,7 +29,7 @@
  * @author לערי ריינהארט
  */
 
-$namespaceNames = array(
+$namespaceNames = [
 	NS_MEDIA            => 'ಮೀಡಿಯ',
 	NS_SPECIAL          => 'ವಿಶೇಷ',
 	NS_TALK             => 'ಚರ್ಚೆಪುಟ',
@@ -47,9 +46,9 @@ $namespaceNames = array(
 	NS_HELP_TALK        => 'ಸಹಾಯ_ಚರ್ಚೆ',
 	NS_CATEGORY         => 'ವರ್ಗ',
 	NS_CATEGORY_TALK    => 'ವರ್ಗ_ಚರ್ಚೆ',
-);
+];
 
-$digitTransformTable = array(
+$digitTransformTable = [
 	'0' => '೦', # &#x0ce6;
 	'1' => '೧', # &#x0ce7;
 	'2' => '೨', # &#x0ce8;
@@ -60,7 +59,7 @@ $digitTransformTable = array(
 	'7' => '೭', # &#x0ced;
 	'8' => '೮', # &#x0cee;
 	'9' => '೯', # &#x0cef;
-);
+];
 
 $digitGroupingPattern = "##,##,###";
 

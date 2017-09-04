@@ -34,27 +34,25 @@
 class LanguageTr extends Language {
 
 	/**
-	 * @param $string string
+	 * @param string $string
 	 * @return string
 	 */
 	function ucfirst( $string ) {
 		if ( strlen( $string ) && $string[0] == 'i' ) {
 			return 'İ' . substr( $string, 1 );
-		} else {
-			return parent::ucfirst( $string );
 		}
+		return parent::ucfirst( $string );
 	}
 
 	/**
-	 * @param $string string
+	 * @param string $string
 	 * @return mixed|string
 	 */
 	function lcfirst( $string ) {
 		if ( strlen( $string ) && $string[0] == 'I' ) {
 			return 'ı' . substr( $string, 1 );
-		} else {
-			return parent::lcfirst( $string );
 		}
+		return parent::lcfirst( $string );
 	}
 
 }

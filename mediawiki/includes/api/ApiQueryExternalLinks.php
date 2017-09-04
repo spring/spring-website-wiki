@@ -31,7 +31,7 @@
  */
 class ApiQueryExternalLinks extends ApiQueryBase {
 
-	public function __construct( $query, $moduleName ) {
+	public function __construct( ApiQuery $query, $moduleName ) {
 		parent::__construct( $query, $moduleName, 'el' );
 	}
 
@@ -45,10 +45,10 @@ class ApiQueryExternalLinks extends ApiQueryBase {
 		$query = $params['query'];
 		$protocol = ApiQueryExtLinksUsage::getProtocolPrefix( $params['protocol'] );
 
-		$this->addFields( array(
+		$this->addFields( [
 			'el_from',
 			'el_to'
-		) );
+		] );
 
 		$this->addTables( 'externallinks' );
 		$this->addWhereFld( 'el_from', array_keys( $this->getPageSet()->getGoodTitles() ) );
@@ -85,13 +85,13 @@ class ApiQueryExternalLinks extends ApiQueryBase {
 				$this->setContinueEnumParameter( 'offset', $offset + $params['limit'] );
 				break;
 			}
-			$entry = array();
+			$entry = [];
 			$to = $row->el_to;
 			// expand protocol-relative urls
 			if ( $params['expandurl'] ) {
 				$to = wfExpandUrl( $to, PROTO_CANONICAL );
 			}
-			ApiResult::setContent( $entry, $to );
+			ApiResult::setContentValue( $entry, 'url', $to );
 			$fit = $this->addPageSubItem( $row->el_from, $entry );
 			if ( !$fit ) {
 				$this->setContinueEnumParameter( 'offset', $offset + $count - 1 );
@@ -105,68 +105,35 @@ class ApiQueryExternalLinks extends ApiQueryBase {
 	}
 
 	public function getAllowedParams() {
-		return array(
-			'limit' => array(
+		return [
+			'limit' => [
 				ApiBase::PARAM_DFLT => 10,
 				ApiBase::PARAM_TYPE => 'limit',
 				ApiBase::PARAM_MIN => 1,
 				ApiBase::PARAM_MAX => ApiBase::LIMIT_BIG1,
 				ApiBase::PARAM_MAX2 => ApiBase::LIMIT_BIG2
-			),
-			'offset' => array(
-				ApiBase::PARAM_TYPE => 'integer'
-			),
-			'protocol' => array(
+			],
+			'offset' => [
+				ApiBase::PARAM_TYPE => 'integer',
+				ApiBase::PARAM_HELP_MSG => 'api-help-param-continue',
+			],
+			'protocol' => [
 				ApiBase::PARAM_TYPE => ApiQueryExtLinksUsage::prepareProtocols(),
 				ApiBase::PARAM_DFLT => '',
-			),
+			],
 			'query' => null,
 			'expandurl' => false,
-		);
+		];
 	}
 
-	public function getParamDescription() {
-		$p = $this->getModulePrefix();
-
-		return array(
-			'limit' => 'How many links to return',
-			'offset' => 'When more results are available, use this to continue',
-			'protocol' => array(
-				"Protocol of the URL. If empty and {$p}query set, the protocol is http.",
-				"Leave both this and {$p}query empty to list all external links"
-			),
-			'query' => 'Search string without protocol. Useful for checking ' .
-				'whether a certain page contains a certain external url',
-			'expandurl' => 'Expand protocol-relative URLs with the canonical protocol',
-		);
-	}
-
-	public function getResultProperties() {
-		return array(
-			'' => array(
-				'*' => 'string'
-			)
-		);
-	}
-
-	public function getDescription() {
-		return 'Returns all external URLs (not interwikis) from the given page(s).';
-	}
-
-	public function getPossibleErrors() {
-		return array_merge( parent::getPossibleErrors(), array(
-			array( 'code' => 'bad_query', 'info' => 'Invalid query' ),
-		) );
-	}
-
-	public function getExamples() {
-		return array(
-			'api.php?action=query&prop=extlinks&titles=Main%20Page'
-				=> 'Get a list of external links on the [[Main Page]]',
-		);
+	protected function getExamplesMessages() {
+		return [
+			'action=query&prop=extlinks&titles=Main%20Page'
+				=> 'apihelp-query+extlinks-example-simple',
+		];
 	}
 
 	public function getHelpUrls() {
-		return 'https://www.mediawiki.org/wiki/API:Properties#extlinks_.2F_el';
+		return 'https://www.mediawiki.org/wiki/API:Extlinks';
 	}
 }

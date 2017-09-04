@@ -21,6 +21,7 @@
  * @license GPL 2+
  * @author Daniel Kinzler
  */
+use MediaWiki\Linker\LinkTarget;
 
 /**
  * Represents a link rendering service for %MediaWiki.
@@ -29,41 +30,40 @@
  * URLs, and how links are encoded in a given output format.
  *
  * @see https://www.mediawiki.org/wiki/Requests_for_comment/TitleValue
+ * @since 1.23
  */
 interface PageLinkRenderer {
-
 	/**
 	 * Returns the URL for the given page.
 	 *
 	 * @todo expand this to cover the functionality of Linker::linkUrl
 	 *
-	 * @param TitleValue $page The link's target
-	 * @param array $params any additional URL parameters.
+	 * @param LinkTarget $page The link's target
+	 * @param array $params Any additional URL parameters.
 	 *
 	 * @return string
 	 */
-	public function getPageUrl( TitleValue $page, $params = array() );
+	public function getPageUrl( LinkTarget $page, $params = [] );
 
 	/**
 	 * Returns an HTML link to the given page, using the given surface text.
 	 *
 	 * @todo expand this to cover the functionality of Linker::link
 	 *
-	 * @param TitleValue $page The link's target
+	 * @param LinkTarget $page The link's target
 	 * @param string $text The link's surface text (will be derived from $page if not given).
 	 *
 	 * @return string
 	 */
-	public function renderHtmlLink( TitleValue $page, $text = null );
+	public function renderHtmlLink( LinkTarget $page, $text = null );
 
 	/**
 	 * Returns a wikitext link to the given page, using the given surface text.
 	 *
-	 * @param TitleValue $page The link's target
+	 * @param LinkTarget $page The link's target
 	 * @param string $text The link's surface text (will be derived from $page if not given).
 	 *
 	 * @return string
 	 */
-	public function renderWikitextLink( TitleValue $page, $text = null );
-
+	public function renderWikitextLink( LinkTarget $page, $text = null );
 }

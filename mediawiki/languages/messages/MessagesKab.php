@@ -1,15 +1,14 @@
 <?php
 /** Kabyle (Taqbaylit)
  *
- * See MessagesQqq.php for message documentation incl. usage of parameters
- * To improve a translation please visit http://translatewiki.net
+ * To improve a translation please visit https://translatewiki.net
  *
  * @ingroup Language
  * @file
  *
  */
 
-$namespaceNames = array(
+$namespaceNames = [
 	NS_MEDIA            => 'Media',
 	NS_SPECIAL          => 'Uslig',
 	NS_TALK             => 'Mmeslay',
@@ -26,10 +25,10 @@ $namespaceNames = array(
 	NS_HELP_TALK        => 'Amyannan_n_tallat',
 	NS_CATEGORY         => 'Taggayt',
 	NS_CATEGORY_TALK    => 'Amyannan_n_taggayt',
-);
+];
 
-$namespaceAliases = array(
+$namespaceAliases = [
 	'Talγa'            => NS_TEMPLATE,
 	'Amyannan_n_talγa' => NS_TEMPLATE_TALK,
-);
+];
 

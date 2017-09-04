@@ -38,14 +38,14 @@ class MostlinkedCategoriesPage extends QueryPage {
 		return false;
 	}
 
-	function getQueryInfo() {
-		return array(
-			'tables' => array( 'category' ),
-			'fields' => array( 'title' => 'cat_title',
+	public function getQueryInfo() {
+		return [
+			'tables' => [ 'category' ],
+			'fields' => [ 'title' => 'cat_title',
 				'namespace' => NS_CATEGORY,
-				'value' => 'cat_pages' ),
-			'conds' => array( 'cat_pages > 0' ),
-		);
+				'value' => 'cat_pages' ],
+			'conds' => [ 'cat_pages > 0' ],
+		];
 	}
 
 	function sortDescending() {
@@ -55,7 +55,7 @@ class MostlinkedCategoriesPage extends QueryPage {
 	/**
 	 * Fetch user page links and cache their existence
 	 *
-	 * @param DatabaseBase $db
+	 * @param IDatabase $db
 	 * @param ResultWrapper $res
 	 */
 	function preprocessResults( $db, $res ) {
@@ -85,7 +85,7 @@ class MostlinkedCategoriesPage extends QueryPage {
 		if ( !$nt ) {
 			return Html::element(
 				'span',
-				array( 'class' => 'mw-invalidtitle' ),
+				[ 'class' => 'mw-invalidtitle' ],
 				Linker::getInvalidTitleDescription(
 					$this->getContext(),
 					NS_CATEGORY,

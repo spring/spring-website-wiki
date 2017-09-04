@@ -28,9 +28,16 @@
  */
 class HashRing {
 	/** @var Array (location => weight) */
-	protected $sourceMap = array();
+	protected $sourceMap = [];
 	/** @var Array (location => (start, end)) */
-	protected $ring = array();
+	protected $ring = [];
+
+	/** @var Array (location => (start, end)) */
+	protected $liveRing;
+	/** @var Array (location => UNIX timestamp) */
+	protected $ejectionExpiries = [];
+	/** @var integer UNIX timestamp */
+	protected $ejectionNextExpiry = INF;
 
 	const RING_SIZE = 268435456; // 2^28
 
@@ -46,7 +53,7 @@ class HashRing {
 		}
 		$this->sourceMap = $map;
 		// Sort the locations based on the hash of their names
-		$hashes = array();
+		$hashes = [];
 		foreach ( $map as $location => $weight ) {
 			$hashes[$location] = sha1( $location );
 		}
@@ -55,7 +62,7 @@ class HashRing {
 		} );
 		// Fit the map to weight-proportionate one with a space of size RING_SIZE
 		$sum = array_sum( $map );
-		$standardMap = array();
+		$standardMap = [];
 		foreach ( $map as $location => $weight ) {
 			$standardMap[$location] = (int)floor( $weight / $sum * self::RING_SIZE );
 		}
@@ -63,7 +70,7 @@ class HashRing {
 		$index = 0;
 		foreach ( $standardMap as $location => $weight ) {
 			// Location covers half-closed interval [$index,$index + $weight)
-			$this->ring[$location] = array( $index, $index + $weight );
+			$this->ring[$location] = [ $index, $index + $weight ];
 			$index += $weight;
 		}
 		// Make sure the last location covers what is left
@@ -84,14 +91,14 @@ class HashRing {
 	}
 
 	/**
-	 * Get the location of an item on the ring, as well as the next clockwise locations
+	 * Get the location of an item on the ring, as well as the next locations
 	 *
 	 * @param string $item
 	 * @param integer $limit Maximum number of locations to return
 	 * @return array List of locations
 	 */
 	public function getLocations( $item, $limit ) {
-		$locations = array();
+		$locations = [];
 		$primaryLocation = null;
 		$spot = hexdec( substr( sha1( $item ), 0, 7 ) ); // first 28 bits
 		foreach ( $this->ring as $location => $range ) {
@@ -138,10 +145,95 @@ class HashRing {
 	public function newWithoutLocation( $location ) {
 		$map = $this->sourceMap;
 		unset( $map[$location] );
-		if ( count( $map ) ) {
-			return new self( $map );
+
+		return count( $map ) ? new self( $map ) : false;
+	}
+
+	/**
+	 * Remove a location from the "live" hash ring
+	 *
+	 * @param string $location
+	 * @param integer $ttl Seconds
+	 * @return bool Whether some non-ejected locations are left
+	 */
+	public function ejectFromLiveRing( $location, $ttl ) {
+		if ( !isset( $this->sourceMap[$location] ) ) {
+			throw new UnexpectedValueException( "No location '$location' in the ring." );
+		}
+		$expiry = time() + $ttl;
+		$this->liveRing = null; // stale
+		$this->ejectionExpiries[$location] = $expiry;
+		$this->ejectionNextExpiry = min( $expiry, $this->ejectionNextExpiry );
+
+		return ( count( $this->ejectionExpiries ) < count( $this->sourceMap ) );
+	}
+
+	/**
+	 * Get the "live" hash ring (which does not include ejected locations)
+	 *
+	 * @return HashRing
+	 * @throws UnexpectedValueException
+	 */
+	public function getLiveRing() {
+		$now = time();
+		if ( $this->liveRing === null || $this->ejectionNextExpiry <= $now ) {
+			$this->ejectionExpiries = array_filter(
+				$this->ejectionExpiries,
+				function( $expiry ) use ( $now ) {
+					return ( $expiry > $now );
+				}
+			);
+			if ( count( $this->ejectionExpiries ) ) {
+				$map = array_diff_key( $this->sourceMap, $this->ejectionExpiries );
+				$this->liveRing = count( $map ) ? new self( $map ) : false;
+
+				$this->ejectionNextExpiry = min( $this->ejectionExpiries );
+			} else { // common case; avoid recalculating ring
+				$this->liveRing = clone $this;
+				$this->liveRing->ejectionExpiries = [];
+				$this->liveRing->ejectionNextExpiry = INF;
+				$this->liveRing->liveRing = null;
+
+				$this->ejectionNextExpiry = INF;
+			}
+		}
+		if ( !$this->liveRing ) {
+			throw new UnexpectedValueException( "The live ring is currently empty." );
 		}
 
-		return false;
+		return $this->liveRing;
+	}
+
+	/**
+	 * Get the location of an item on the "live" ring
+	 *
+	 * @param string $item
+	 * @return string Location
+	 * @throws UnexpectedValueException
+	 */
+	public function getLiveLocation( $item ) {
+		return $this->getLiveRing()->getLocation( $item );
+	}
+
+	/**
+	 * Get the location of an item on the "live" ring, as well as the next locations
+	 *
+	 * @param string $item
+	 * @param integer $limit Maximum number of locations to return
+	 * @return array List of locations
+	 * @throws UnexpectedValueException
+	 */
+	public function getLiveLocations( $item, $limit ) {
+		return $this->getLiveRing()->getLocations( $item, $limit );
+	}
+
+	/**
+	 * Get the map of "live" locations to weight (ignores 0-weight items)
+	 *
+	 * @return array
+	 * @throws UnexpectedValueException
+	 */
+	public function getLiveLocationWeights() {
+		return $this->getLiveRing()->getLocationWeights();
 	}
 }

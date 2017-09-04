@@ -34,7 +34,7 @@ class ListDuplicatedFilesPage extends QueryPage {
 		parent::__construct( $name );
 	}
 
-	function isExpensive() {
+	public function isExpensive() {
 		return true;
 	}
 
@@ -51,26 +51,27 @@ class ListDuplicatedFilesPage extends QueryPage {
 	 * However this version should be no more expensive then
 	 * Special:MostLinked, which seems to get handled fine
 	 * with however we are doing cached special pages.
+	 * @return array
 	 */
-	function getQueryInfo() {
-		return array(
-			'tables' => array( 'image' ),
-			'fields' => array(
+	public function getQueryInfo() {
+		return [
+			'tables' => [ 'image' ],
+			'fields' => [
 				'namespace' => NS_FILE,
 				'title' => 'MIN(img_name)',
 				'value' => 'count(*)'
-			),
-			'options' => array(
+			],
+			'options' => [
 				'GROUP BY' => 'img_sha1',
 				'HAVING' => 'count(*) > 1',
-			),
-		);
+			],
+		];
 	}
 
 	/**
 	 * Pre-fill the link cache
 	 *
-	 * @param DatabaseBase $db
+	 * @param IDatabase $db
 	 * @param ResultWrapper $res
 	 */
 	function preprocessResults( $db, $res ) {
@@ -86,7 +87,6 @@ class ListDuplicatedFilesPage extends QueryPage {
 		}
 	}
 
-
 	/**
 	 * @param Skin $skin
 	 * @param object $result Result row
@@ -96,12 +96,12 @@ class ListDuplicatedFilesPage extends QueryPage {
 		// Future version might include a list of the first 5 duplicates
 		// perhaps separated by an "↔".
 		$image1 = Title::makeTitle( $result->namespace, $result->title );
-		$dupeSearch = SpecialPage::getTitleFor( 'FileDuplicateSearch', $image1->getDBKey() );
+		$dupeSearch = SpecialPage::getTitleFor( 'FileDuplicateSearch', $image1->getDBkey() );
 
 		$msg = $this->msg( 'listduplicatedfiles-entry' )
 			->params( $image1->getText() )
 			->numParams( $result->value - 1 )
-			->params( $dupeSearch->getPrefixedDBKey() );
+			->params( $dupeSearch->getPrefixedDBkey() );
 
 		return $msg->parse();
 	}

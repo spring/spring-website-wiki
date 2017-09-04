@@ -37,29 +37,32 @@ require_once __DIR__ . '/cleanupTable.inc';
  * @ingroup Maintenance
  */
 class CapsCleanup extends TableCleanup {
+
+	private $user;
+
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Script to cleanup capitalization";
+		$this->addDescription( 'Script to cleanup capitalization' );
 		$this->addOption( 'namespace', 'Namespace number to run caps cleanup on', false, true );
 	}
 
 	public function execute() {
-		global $wgCapitalLinks, $wgUser;
+		global $wgCapitalLinks;
 
 		if ( $wgCapitalLinks ) {
 			$this->error( "\$wgCapitalLinks is on -- no need for caps links cleanup.", true );
 		}
 
-		$wgUser = User::newFromName( 'Conversion script' );
+		$this->user = User::newSystemUser( 'Conversion script', [ 'steal' => true ] );
 
 		$this->namespace = intval( $this->getOption( 'namespace', 0 ) );
 		$this->dryrun = $this->hasOption( 'dry-run' );
 
-		$this->runTable( array(
+		$this->runTable( [
 			'table' => 'page',
-			'conds' => array( 'page_namespace' => $this->namespace ),
+			'conds' => [ 'page_namespace' => $this->namespace ],
 			'index' => 'page_id',
-			'callback' => 'processRow' ) );
+			'callback' => 'processRow' ] );
 	}
 
 	protected function processRow( $row ) {
@@ -71,6 +74,7 @@ class CapsCleanup extends TableCleanup {
 		$lower = $wgContLang->lcfirst( $row->page_title );
 		if ( $upper == $lower ) {
 			$this->output( "\"$display\" already lowercase.\n" );
+
 			return $this->progress( 0 );
 		}
 
@@ -78,6 +82,7 @@ class CapsCleanup extends TableCleanup {
 		$targetDisplay = $target->getPrefixedText();
 		if ( $target->exists() ) {
 			$this->output( "\"$display\" skipped; \"$targetDisplay\" already exists\n" );
+
 			return $this->progress( 0 );
 		}
 
@@ -85,7 +90,9 @@ class CapsCleanup extends TableCleanup {
 			$this->output( "\"$display\" -> \"$targetDisplay\": DRY RUN, NOT MOVED\n" );
 			$ok = true;
 		} else {
-			$ok = $current->moveTo( $target, false, 'Converting page titles to lowercase' );
+			$mp = new MovePage( $current, $target );
+			$status = $mp->move( $this->user, 'Converting page titles to lowercase', true );
+			$ok = $status->isOK() ? 'OK' : $status->getWikiText( false, false, 'en' );
 			$this->output( "\"$display\" -> \"$targetDisplay\": $ok\n" );
 		}
 		if ( $ok === true ) {
@@ -98,6 +105,7 @@ class CapsCleanup extends TableCleanup {
 				}
 			}
 		}
+
 		return $this->progress( 0 );
 	}
 }

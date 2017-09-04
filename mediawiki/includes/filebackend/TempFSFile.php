@@ -31,8 +31,17 @@ class TempFSFile extends FSFile {
 	/** @var bool Garbage collect the temp file */
 	protected $canDelete = false;
 
-	/** @var array Active temp files to purge on shutdown */
-	protected static $instances = array();
+	/** @var array Map of (path => 1) for paths to delete on shutdown */
+	protected static $pathsCollect = null;
+
+	public function __construct( $path ) {
+		parent::__construct( $path );
+
+		if ( self::$pathsCollect === null ) {
+			self::$pathsCollect = [];
+			register_shutdown_function( [ __CLASS__, 'purgeAllOnShutdown' ] );
+		}
+	}
 
 	/**
 	 * Make a new temporary file on the file system.
@@ -43,29 +52,25 @@ class TempFSFile extends FSFile {
 	 * @return TempFSFile|null
 	 */
 	public static function factory( $prefix, $extension = '' ) {
-		wfProfileIn( __METHOD__ );
-		$base = wfTempDir() . '/' . $prefix . wfRandomString( 12 );
-		$ext = ( $extension != '' ) ? ".{$extension}" : "";
-		for ( $attempt = 1; true; $attempt++ ) {
-			$path = "{$base}-{$attempt}{$ext}";
-			wfSuppressWarnings();
+		$ext = ( $extension != '' ) ? ".{$extension}" : '';
+
+		$attempts = 5;
+		while ( $attempts-- ) {
+			$path = wfTempDir() . '/' . $prefix . wfRandomString( 12 ) . $ext;
+			MediaWiki\suppressWarnings();
 			$newFileHandle = fopen( $path, 'x' );
-			wfRestoreWarnings();
+			MediaWiki\restoreWarnings();
 			if ( $newFileHandle ) {
 				fclose( $newFileHandle );
-				break; // got it
-			}
-			if ( $attempt >= 5 ) {
-				wfProfileOut( __METHOD__ );
-
-				return null; // give up
+				$tmpFile = new self( $path );
+				$tmpFile->autocollect();
+				// Safely instantiated, end loop.
+				return $tmpFile;
 			}
 		}
-		$tmpFile = new self( $path );
-		$tmpFile->canDelete = true; // safely instantiated
-		wfProfileOut( __METHOD__ );
 
-		return $tmpFile;
+		// Give up
+		return null;
 	}
 
 	/**
@@ -75,9 +80,11 @@ class TempFSFile extends FSFile {
 	 */
 	public function purge() {
 		$this->canDelete = false; // done
-		wfSuppressWarnings();
+		MediaWiki\suppressWarnings();
 		$ok = unlink( $this->path );
-		wfRestoreWarnings();
+		MediaWiki\restoreWarnings();
+
+		unset( self::$pathsCollect[$this->path] );
 
 		return $ok;
 	}
@@ -85,14 +92,14 @@ class TempFSFile extends FSFile {
 	/**
 	 * Clean up the temporary file only after an object goes out of scope
 	 *
-	 * @param stdClass $object
+	 * @param object $object
 	 * @return TempFSFile This object
 	 */
 	public function bind( $object ) {
 		if ( is_object( $object ) ) {
 			if ( !isset( $object->tempFSFileReferences ) ) {
 				// Init first since $object might use __get() and return only a copy variable
-				$object->tempFSFileReferences = array();
+				$object->tempFSFileReferences = [];
 			}
 			$object->tempFSFileReferences[] = $this;
 		}
@@ -108,6 +115,8 @@ class TempFSFile extends FSFile {
 	public function preserve() {
 		$this->canDelete = false;
 
+		unset( self::$pathsCollect[$this->path] );
+
 		return $this;
 	}
 
@@ -119,7 +128,22 @@ class TempFSFile extends FSFile {
 	public function autocollect() {
 		$this->canDelete = true;
 
+		self::$pathsCollect[$this->path] = 1;
+
 		return $this;
+	}
+
+	/**
+	 * Try to make sure that all files are purged on error
+	 *
+	 * This method should only be called internally
+	 */
+	public static function purgeAllOnShutdown() {
+		foreach ( self::$pathsCollect as $path ) {
+			MediaWiki\suppressWarnings();
+			unlink( $path );
+			MediaWiki\restoreWarnings();
+		}
 	}
 
 	/**
@@ -127,9 +151,7 @@ class TempFSFile extends FSFile {
 	 */
 	function __destruct() {
 		if ( $this->canDelete ) {
-			wfSuppressWarnings();
-			unlink( $this->path );
-			wfRestoreWarnings();
+			$this->purge();
 		}
 	}
 }

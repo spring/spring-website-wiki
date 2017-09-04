@@ -1,12 +1,10 @@
-/**
+/*!
  * Exif metadata display for MediaWiki file uploads
  *
  * Add an expand/collapse link and collapse by default if set to
  * (with JS disabled, user will see all items)
  *
- * See also:
- * - ImagePage.php#makeMetadataTable (creates the HTML)
- * - skins/common/shared.css (hides tr.collapsable inside table.collapsed)
+ * See also ImagePage.php#makeMetadataTable (creates the HTML)
  */
 ( function ( mw, $ ) {
 	$( function () {
@@ -23,10 +21,10 @@
 		$row = $( '<tr class="mw-metadata-show-hide-extended"></tr>' );
 		$col = $( '<td colspan="2"></td>' );
 
-		$link = $( '<a>', {
-			text: showText,
-			href: '#'
-		} ).click( function () {
+		$link = $( '<a>' )
+		.text( showText )
+		.attr( 'href', '#' )
+		.click( function () {
 			if ( $table.hasClass( 'collapsed' ) ) {
 				$( this ).text( hideText );
 			} else {

@@ -28,14 +28,14 @@
  * @ingroup SpecialPage
  */
 class MIMEsearchPage extends QueryPage {
-	protected $major, $minor;
+	protected $major, $minor, $mime;
 
 	function __construct( $name = 'MIMEsearch' ) {
 		parent::__construct( $name );
 	}
 
-	function isExpensive() {
-		return false;
+	public function isExpensive() {
+		return true;
 	}
 
 	function isSyndicated() {
@@ -47,13 +47,18 @@ class MIMEsearchPage extends QueryPage {
 	}
 
 	function linkParameters() {
-		return array( 'mime' => "{$this->major}/{$this->minor}" );
+		return [ 'mime' => "{$this->major}/{$this->minor}" ];
 	}
 
 	public function getQueryInfo() {
-		$qi = array(
-			'tables' => array( 'image' ),
-			'fields' => array(
+		$minorType = [];
+		if ( $this->minor !== '*' ) {
+			// Allow wildcard searching
+			$minorType['img_minor_mime'] = $this->minor;
+		}
+		$qi = [
+			'tables' => [ 'image' ],
+			'fields' => [
 				'namespace' => NS_FILE,
 				'title' => 'img_name',
 				// Still have a value field just in case,
@@ -64,13 +69,12 @@ class MIMEsearchPage extends QueryPage {
 				'img_height',
 				'img_user_text',
 				'img_timestamp'
-			),
-			'conds' => array(
+			],
+			'conds' => [
 				'img_major_mime' => $this->major,
-				'img_minor_mime' => $this->minor,
 				// This is in order to trigger using
 				// the img_media_mime index in "range" mode.
-				'img_media_type' => array(
+				'img_media_type' => [
 					MEDIATYPE_BITMAP,
 					MEDIATYPE_DRAWING,
 					MEDIATYPE_AUDIO,
@@ -81,9 +85,9 @@ class MIMEsearchPage extends QueryPage {
 					MEDIATYPE_TEXT,
 					MEDIATYPE_EXECUTABLE,
 					MEDIATYPE_ARCHIVE,
-				),
-			),
-		);
+				],
+			] + $minorType,
+		];
 
 		return $qi;
 	}
@@ -95,38 +99,41 @@ class MIMEsearchPage extends QueryPage {
 	 * that this report gives results in a logical order). As an aditional
 	 * note, mysql seems to by default order things by img_name ASC, which
 	 * is what we ideally want, so everything works out fine anyhow.
+	 * @return array
 	 */
 	function getOrderFields() {
-		return array();
+		return [];
 	}
 
-	function execute( $par ) {
-		global $wgScript;
-
-		$mime = $par ? $par : $this->getRequest()->getText( 'mime' );
-
-		$this->setHeaders();
-		$this->outputHeader();
-		$this->getOutput()->addHTML(
-			Xml::openElement(
+	/**
+	 * Return HTML to put just before the results.
+	 */
+	function getPageHeader() {
+		return Xml::openElement(
 				'form',
-				array( 'id' => 'specialmimesearch', 'method' => 'get', 'action' => $wgScript )
+				[ 'id' => 'specialmimesearch', 'method' => 'get', 'action' => wfScript() ]
 			) .
-				Xml::openElement( 'fieldset' ) .
-				Html::hidden( 'title', $this->getPageTitle()->getPrefixedText() ) .
-				Xml::element( 'legend', null, $this->msg( 'mimesearch' )->text() ) .
-				Xml::inputLabel( $this->msg( 'mimetype' )->text(), 'mime', 'mime', 20, $mime ) .
-				' ' .
-				Xml::submitButton( $this->msg( 'ilsubmit' )->text() ) .
-				Xml::closeElement( 'fieldset' ) .
-				Xml::closeElement( 'form' )
-		);
+			Xml::openElement( 'fieldset' ) .
+			Html::hidden( 'title', $this->getPageTitle()->getPrefixedText() ) .
+			Xml::element( 'legend', null, $this->msg( 'mimesearch' )->text() ) .
+			Xml::inputLabel( $this->msg( 'mimetype' )->text(), 'mime', 'mime', 20, $this->mime ) .
+			' ' .
+			Xml::submitButton( $this->msg( 'ilsubmit' )->text() ) .
+					Xml::closeElement( 'fieldset' ) .
+					Xml::closeElement( 'form' );
+	}
 
-		list( $this->major, $this->minor ) = File::splitMime( $mime );
+	public function execute( $par ) {
+		$this->mime = $par ? $par : $this->getRequest()->getText( 'mime' );
+		$this->mime = trim( $this->mime );
+		list( $this->major, $this->minor ) = File::splitMime( $this->mime );
 
 		if ( $this->major == '' || $this->minor == '' || $this->minor == 'unknown' ||
 			!self::isValidType( $this->major )
 		) {
+			$this->setHeaders();
+			$this->outputHeader();
+			$this->getOutput()->addHTML( $this->getPageHeader() );
 			return;
 		}
 
@@ -166,12 +173,12 @@ class MIMEsearchPage extends QueryPage {
 	}
 
 	/**
-	 * @param $type string
+	 * @param string $type
 	 * @return bool
 	 */
 	protected static function isValidType( $type ) {
 		// From maintenance/tables.sql => img_major_mime
-		$types = array(
+		$types = [
 			'unknown',
 			'application',
 			'audio',
@@ -180,8 +187,9 @@ class MIMEsearchPage extends QueryPage {
 			'video',
 			'message',
 			'model',
-			'multipart'
-		);
+			'multipart',
+			'chemical'
+		];
 
 		return in_array( $type, $types );
 	}

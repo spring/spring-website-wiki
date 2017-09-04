@@ -39,21 +39,21 @@ require_once __DIR__ . '/Maintenance.php';
 class ShowSiteStats extends Maintenance {
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Show the cached statistics";
+		$this->addDescription( 'Show the cached statistics' );
 	}
+
 	public function execute() {
-		$fields = array(
-			'ss_total_views' => 'Total views',
+		$fields = [
 			'ss_total_edits' => 'Total edits',
 			'ss_good_articles' => 'Number of articles',
 			'ss_total_pages' => 'Total pages',
 			'ss_users' => 'Number of users',
 			'ss_active_users' => 'Active users',
 			'ss_images' => 'Number of images',
-		);
+		];
 
 		// Get cached stats from slave database
-		$dbr = wfGetDB( DB_SLAVE );
+		$dbr = $this->getDB( DB_SLAVE );
 		$stats = $dbr->selectRow( 'site_stats', '*', '', __METHOD__ );
 
 		// Get maximum size for each column
@@ -65,7 +65,11 @@ class ShowSiteStats extends Maintenance {
 
 		// Show them
 		foreach ( $fields as $field => $desc ) {
-			$this->output( sprintf( "%-{$max_length_desc}s: %{$max_length_value}d\n", $desc, $stats->$field ) );
+			$this->output( sprintf(
+				"%-{$max_length_desc}s: %{$max_length_value}d\n",
+				$desc,
+				$stats->$field
+			) );
 		}
 	}
 }

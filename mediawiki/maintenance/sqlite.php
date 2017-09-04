@@ -31,8 +31,11 @@ require_once __DIR__ . '/Maintenance.php';
 class SqliteMaintenance extends Maintenance {
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Performs some operations specific to SQLite database backend";
-		$this->addOption( 'vacuum', 'Clean up database by removing deleted pages. Decreases database file size' );
+		$this->addDescription( 'Performs some operations specific to SQLite database backend' );
+		$this->addOption(
+			'vacuum',
+			'Clean up database by removing deleted pages. Decreases database file size'
+		);
 		$this->addOption( 'integrity', 'Check database for integrity' );
 		$this->addOption( 'backup-to', 'Backup database to the given file', false, true );
 		$this->addOption( 'check-syntax', 'Check SQL file(s) for syntax errors', false, true );
@@ -52,13 +55,15 @@ class SqliteMaintenance extends Maintenance {
 		// Should work even if we use a non-SQLite database
 		if ( $this->hasOption( 'check-syntax' ) ) {
 			$this->checkSyntax();
+
 			return;
 		}
 
-		$this->db = wfGetDB( DB_MASTER );
+		$this->db = $this->getDB( DB_MASTER );
 
 		if ( $this->db->getType() != 'sqlite' ) {
 			$this->error( "This maintenance script requires a SQLite database.\n" );
+
 			return;
 		}
 
@@ -76,7 +81,7 @@ class SqliteMaintenance extends Maintenance {
 	}
 
 	private function vacuum() {
-		$prevSize = filesize( $this->db->mDatabaseFile );
+		$prevSize = filesize( $this->db->getDbFilePath() );
 		if ( $prevSize == 0 ) {
 			$this->error( "Can't vacuum an empty database.\n", true );
 		}
@@ -84,7 +89,7 @@ class SqliteMaintenance extends Maintenance {
 		$this->output( 'VACUUM: ' );
 		if ( $this->db->query( 'VACUUM' ) ) {
 			clearstatcache();
-			$newSize = filesize( $this->db->mDatabaseFile );
+			$newSize = filesize( $this->db->getDbFilePath() );
 			$this->output( sprintf( "Database size was %d, now %d (%.1f%% reduction).\n",
 				$prevSize, $newSize, ( $prevSize - $newSize ) * 100.0 / $prevSize ) );
 		} else {
@@ -98,6 +103,7 @@ class SqliteMaintenance extends Maintenance {
 
 		if ( !$res || $res->numRows() == 0 ) {
 			$this->error( "Error: integrity check query returned nothing.\n" );
+
 			return;
 		}
 
@@ -109,23 +115,23 @@ class SqliteMaintenance extends Maintenance {
 	private function backup( $fileName ) {
 		$this->output( "Backing up database:\n   Locking..." );
 		$this->db->query( 'BEGIN IMMEDIATE TRANSACTION', __METHOD__ );
-		$ourFile = $this->db->mDatabaseFile;
+		$ourFile = $this->db->getDbFilePath();
 		$this->output( "   Copying database file $ourFile to $fileName... " );
-		wfSuppressWarnings( false );
+		MediaWiki\suppressWarnings( false );
 		if ( !copy( $ourFile, $fileName ) ) {
 			$err = error_get_last();
 			$this->error( "      {$err['message']}" );
 		}
-		wfSuppressWarnings( true );
+		MediaWiki\suppressWarnings( true );
 		$this->output( "   Releasing lock...\n" );
 		$this->db->query( 'COMMIT TRANSACTION', __METHOD__ );
 	}
 
 	private function checkSyntax() {
-		if ( !Sqlite::IsPresent() ) {
+		if ( !Sqlite::isPresent() ) {
 			$this->error( "Error: SQLite support not found\n" );
 		}
-		$files = array( $this->getOption( 'check-syntax' ) );
+		$files = [ $this->getOption( 'check-syntax' ) ];
 		$files += $this->mArgs;
 		$result = Sqlite::checkSqlSyntax( $files );
 		if ( $result === true ) {

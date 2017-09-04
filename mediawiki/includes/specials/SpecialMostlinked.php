@@ -35,7 +35,7 @@ class MostlinkedPage extends QueryPage {
 		parent::__construct( $name );
 	}
 
-	function isExpensive() {
+	public function isExpensive() {
 		return true;
 	}
 
@@ -43,38 +43,38 @@ class MostlinkedPage extends QueryPage {
 		return false;
 	}
 
-	function getQueryInfo() {
-		return array(
-			'tables' => array( 'pagelinks', 'page' ),
-			'fields' => array(
+	public function getQueryInfo() {
+		return [
+			'tables' => [ 'pagelinks', 'page' ],
+			'fields' => [
 				'namespace' => 'pl_namespace',
 				'title' => 'pl_title',
 				'value' => 'COUNT(*)',
 				'page_namespace'
-			),
-			'options' => array(
+			],
+			'options' => [
 				'HAVING' => 'COUNT(*) > 1',
-				'GROUP BY' => array(
+				'GROUP BY' => [
 					'pl_namespace', 'pl_title',
 					'page_namespace'
-				)
-			),
-			'join_conds' => array(
-				'page' => array(
+				]
+			],
+			'join_conds' => [
+				'page' => [
 					'LEFT JOIN',
-					array(
+					[
 						'page_namespace = pl_namespace',
 						'page_title = pl_title'
-					)
-				)
-			)
-		);
+					]
+				]
+			]
+		];
 	}
 
 	/**
 	 * Pre-fill the link cache
 	 *
-	 * @param DatabaseBase $db
+	 * @param IDatabase $db
 	 * @param ResultWrapper $res
 	 */
 	function preprocessResults( $db, $res ) {
@@ -93,9 +93,9 @@ class MostlinkedPage extends QueryPage {
 	/**
 	 * Make a link to "what links here" for the specified title
 	 *
-	 * @param $title Title being queried
-	 * @param string $caption text to display on the link
-	 * @return String
+	 * @param Title $title Title being queried
+	 * @param string $caption Text to display on the link
+	 * @return string
 	 */
 	function makeWlhLink( $title, $caption ) {
 		$wlh = SpecialPage::getTitleFor( 'Whatlinkshere', $title->getPrefixedDBkey() );
@@ -116,7 +116,7 @@ class MostlinkedPage extends QueryPage {
 		if ( !$title ) {
 			return Html::element(
 				'span',
-				array( 'class' => 'mw-invalidtitle' ),
+				[ 'class' => 'mw-invalidtitle' ],
 				Linker::getInvalidTitleDescription(
 					$this->getContext(),
 					$result->namespace,

@@ -30,7 +30,7 @@
 class CliInstaller extends Installer {
 	private $specifiedScriptPath = false;
 
-	private $optionMap = array(
+	private $optionMap = [
 		'dbtype' => 'wgDBtype',
 		'dbserver' => 'wgDBserver',
 		'dbname' => 'wgDBname',
@@ -44,16 +44,16 @@ class CliInstaller extends Installer {
 		'dbpath' => 'wgSQLiteDataDir',
 		'server' => 'wgServer',
 		'scriptpath' => 'wgScriptPath',
-	);
+	];
 
 	/**
 	 * Constructor.
 	 *
-	 * @param $siteName
-	 * @param $admin
-	 * @param $option Array
+	 * @param string $siteName
+	 * @param string $admin
+	 * @param array $option
 	 */
-	function __construct( $siteName, $admin = null, array $option = array() ) {
+	function __construct( $siteName, $admin = null, array $option = [] ) {
 		global $wgContLang;
 
 		parent::__construct();
@@ -75,6 +75,7 @@ class CliInstaller extends Installer {
 			$wgContLang = Language::factory( $option['lang'] );
 			$wgLang = Language::factory( $option['lang'] );
 			$wgLanguageCode = $option['lang'];
+			RequestContext::getMain()->setLanguage( $wgLang );
 		}
 
 		$this->setVar( 'wgSitename', $siteName );
@@ -107,6 +108,15 @@ class CliInstaller extends Installer {
 		if ( isset( $option['pass'] ) ) {
 			$this->setVar( '_AdminPassword', $option['pass'] );
 		}
+
+		// Set up the default skins
+		$skins = $this->findExtensions( 'skins' );
+		$this->setVar( '_Skins', $skins );
+
+		if ( $skins ) {
+			$skinNames = array_map( 'strtolower', $skins );
+			$this->setVar( 'wgDefaultSkin', $this->getDefaultSkin( $skinNames ) );
+		}
 	}
 
 	/**
@@ -121,8 +131,8 @@ class CliInstaller extends Installer {
 		}
 
 		$this->performInstallation(
-			array( $this, 'startStage' ),
-			array( $this, 'endStage' )
+			[ $this, 'startStage' ],
+			[ $this, 'endStage' ]
 		);
 	}
 
@@ -138,7 +148,8 @@ class CliInstaller extends Installer {
 
 	public function startStage( $step ) {
 		// Messages: config-install-database, config-install-tables, config-install-interwiki,
-		// config-install-stats, config-install-keys, config-install-sysop, config-install-mainpage
+		// config-install-stats, config-install-keys, config-install-sysop, config-install-mainpage,
+		// config-install-extensions
 		$this->showMessage( "config-install-$step" );
 	}
 
@@ -158,7 +169,7 @@ class CliInstaller extends Installer {
 	}
 
 	/**
-	 * @param $params array
+	 * @param array $params
 	 *
 	 * @return string
 	 */
@@ -184,11 +195,11 @@ class CliInstaller extends Installer {
 
 		if ( count( $warnings ) !== 0 ) {
 			foreach ( $warnings as $w ) {
-				call_user_func_array( array( $this, 'showMessage' ), $w );
+				call_user_func_array( [ $this, 'showMessage' ], $w );
 			}
 		}
 
-		if ( !$status->isOk() ) {
+		if ( !$status->isOK() ) {
 			echo "\n";
 			exit( 1 );
 		}

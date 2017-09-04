@@ -30,7 +30,7 @@
 class RandomPage extends SpecialPage {
 	private $namespaces; // namespaces to select pages from
 	protected $isRedir = false; // should the result be a redirect?
-	protected $extra = array(); // Extra SQL statements
+	protected $extra = []; // Extra SQL statements
 
 	public function __construct( $name = 'Randompage' ) {
 		$this->namespaces = MWNamespace::getContentNamespaces();
@@ -45,7 +45,7 @@ class RandomPage extends SpecialPage {
 		if ( !$ns || $ns < NS_MAIN ) {
 			$ns = NS_MAIN;
 		}
-		$this->namespaces = array( $ns );
+		$this->namespaces = [ $ns ];
 	}
 
 	// select redirects instead of normal pages?
@@ -56,7 +56,9 @@ class RandomPage extends SpecialPage {
 	public function execute( $par ) {
 		global $wgContLang;
 
-		if ( $par ) {
+		if ( is_string( $par ) ) {
+			// Testing for stringiness since we want to catch
+			// the empty string to mean main namespace only.
 			$this->setNamespace( $wgContLang->getNsIndex( $par ) );
 		}
 
@@ -71,7 +73,7 @@ class RandomPage extends SpecialPage {
 			return;
 		}
 
-		$redirectParam = $this->isRedirect() ? array( 'redirect' => 'no' ) : array();
+		$redirectParam = $this->isRedirect() ? [ 'redirect' => 'no' ] : [];
 		$query = array_merge( $this->getRequest()->getValues(), $redirectParam );
 		unset( $query['title'] );
 		$this->getOutput()->redirect( $title->getFullURL( $query ) );
@@ -80,11 +82,11 @@ class RandomPage extends SpecialPage {
 	/**
 	 * Get a comma-delimited list of namespaces we don't have
 	 * any pages in
-	 * @return String
+	 * @return string
 	 */
 	private function getNsList() {
 		global $wgContLang;
-		$nsNames = array();
+		$nsNames = [];
 		foreach ( $this->namespaces as $n ) {
 			if ( $n === NS_MAIN ) {
 				$nsNames[] = $this->msg( 'blanknamespace' )->plain();
@@ -98,15 +100,15 @@ class RandomPage extends SpecialPage {
 
 	/**
 	 * Choose a random title.
-	 * @return Title object (or null if nothing to choose from)
+	 * @return Title|null Title object (or null if nothing to choose from)
 	 */
 	public function getRandomTitle() {
 		$randstr = wfRandom();
 		$title = null;
 
-		if ( !wfRunHooks(
+		if ( !Hooks::run(
 			'SpecialRandomGetRandomTitle',
-			array( &$randstr, &$this->isRedir, &$this->namespaces, &$this->extra, &$title )
+			[ &$randstr, &$this->isRedir, &$this->namespaces, &$this->extra, &$title ]
 		) ) {
 			return $title;
 		}
@@ -133,21 +135,27 @@ class RandomPage extends SpecialPage {
 
 	protected function getQueryInfo( $randstr ) {
 		$redirect = $this->isRedirect() ? 1 : 0;
+		$tables = [ 'page' ];
+		$conds = array_merge( [
+			'page_namespace' => $this->namespaces,
+			'page_is_redirect' => $redirect,
+			'page_random >= ' . $randstr
+		], $this->extra );
+		$joinConds = [];
 
-		return array(
-			'tables' => array( 'page' ),
-			'fields' => array( 'page_title', 'page_namespace' ),
-			'conds' => array_merge( array(
-				'page_namespace' => $this->namespaces,
-				'page_is_redirect' => $redirect,
-				'page_random >= ' . $randstr
-			), $this->extra ),
-			'options' => array(
+		// Allow extensions to modify the query
+		Hooks::run( 'RandomPageQuery', [ &$tables, &$conds, &$joinConds ] );
+
+		return [
+			'tables' => $tables,
+			'fields' => [ 'page_title', 'page_namespace' ],
+			'conds' => $conds,
+			'options' => [
 				'ORDER BY' => 'page_random',
 				'LIMIT' => 1,
-			),
-			'join_conds' => array()
-		);
+			],
+			'join_conds' => $joinConds
+		];
 	}
 
 	private function selectRandomPageFromDB( $randstr, $fname = __METHOD__ ) {

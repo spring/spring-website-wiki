@@ -24,6 +24,8 @@
 /**
  * Class to handle tracking information about all queues using PhpRedis
  *
+ * The mediawiki/services/jobrunner background service must be set up and running.
+ *
  * @ingroup JobQueue
  * @ingroup Redis
  * @since 1.21
@@ -31,124 +33,66 @@
 class JobQueueAggregatorRedis extends JobQueueAggregator {
 	/** @var RedisConnectionPool */
 	protected $redisPool;
-
 	/** @var array List of Redis server addresses */
 	protected $servers;
 
 	/**
-	 * @params include:
+	 * @param array $params Possible keys:
 	 *   - redisConfig  : An array of parameters to RedisConnectionPool::__construct().
 	 *   - redisServers : Array of server entries, the first being the primary and the
 	 *                    others being fallback servers. Each entry is either a hostname/port
 	 *                    combination or the absolute path of a UNIX socket.
 	 *                    If a hostname is specified but no port, the standard port number
 	 *                    6379 will be used. Required.
-	 * @param array $params
 	 */
-	protected function __construct( array $params ) {
+	public function __construct( array $params ) {
 		parent::__construct( $params );
 		$this->servers = isset( $params['redisServers'] )
 			? $params['redisServers']
-			: array( $params['redisServer'] ); // b/c
+			: [ $params['redisServer'] ]; // b/c
+		$params['redisConfig']['serializer'] = 'none';
 		$this->redisPool = RedisConnectionPool::singleton( $params['redisConfig'] );
 	}
 
 	protected function doNotifyQueueEmpty( $wiki, $type ) {
-		$conn = $this->getConnection();
-		if ( !$conn ) {
-			return false;
-		}
-		try {
-			$conn->hDel( $this->getReadyQueueKey(), $this->encQueueName( $type, $wiki ) );
-
-			return true;
-		} catch ( RedisException $e ) {
-			$this->handleException( $conn, $e );
-
-			return false;
-		}
+		return true; // managed by the service
 	}
 
 	protected function doNotifyQueueNonEmpty( $wiki, $type ) {
-		$conn = $this->getConnection();
-		if ( !$conn ) {
-			return false;
-		}
-		try {
-			$conn->hSet( $this->getReadyQueueKey(), $this->encQueueName( $type, $wiki ), time() );
-
-			return true;
-		} catch ( RedisException $e ) {
-			$this->handleException( $conn, $e );
-
-			return false;
-		}
+		return true; // managed by the service
 	}
 
 	protected function doGetAllReadyWikiQueues() {
 		$conn = $this->getConnection();
 		if ( !$conn ) {
-			return array();
+			return [];
 		}
 		try {
-			$conn->multi( Redis::PIPELINE );
-			$conn->exists( $this->getReadyQueueKey() );
-			$conn->hGetAll( $this->getReadyQueueKey() );
-			list( $exists, $map ) = $conn->exec();
+			$map = $conn->hGetAll( $this->getReadyQueueKey() );
 
-			if ( $exists ) { // cache hit
-				$pendingDBs = array(); // (type => list of wikis)
+			if ( is_array( $map ) && isset( $map['_epoch'] ) ) {
+				unset( $map['_epoch'] ); // ignore
+				$pendingDBs = []; // (type => list of wikis)
 				foreach ( $map as $key => $time ) {
-					list( $type, $wiki ) = $this->dencQueueName( $key );
+					list( $type, $wiki ) = $this->decodeQueueName( $key );
 					$pendingDBs[$type][] = $wiki;
 				}
-			} else { // cache miss
-				// Avoid duplicated effort
-				$rand = wfRandomString( 32 );
-				$conn->multi( Redis::MULTI );
-				$conn->setex( "{$rand}:lock", 3600, 1 );
-				$conn->renamenx( "{$rand}:lock", $this->getReadyQueueKey() . ":lock" );
-				if ( $conn->exec() !== array( true, true ) ) { // lock
-					$conn->delete( "{$rand}:lock" );
-					return array(); // already in progress
-				}
-
-				$pendingDBs = $this->findPendingWikiQueues(); // (type => list of wikis)
-
-				$conn->delete( $this->getReadyQueueKey() . ":lock" ); // unlock
-
-				$now = time();
-				$map = array();
-				foreach ( $pendingDBs as $type => $wikis ) {
-					foreach ( $wikis as $wiki ) {
-						$map[$this->encQueueName( $type, $wiki )] = $now;
-					}
-				}
-				$conn->hMSet( $this->getReadyQueueKey(), $map );
+			} else {
+				throw new UnexpectedValueException(
+					"No queue listing found; make sure redisJobChronService is running."
+				);
 			}
 
 			return $pendingDBs;
 		} catch ( RedisException $e ) {
-			$this->handleException( $conn, $e );
+			$this->redisPool->handleError( $conn, $e );
 
-			return array();
+			return [];
 		}
 	}
 
 	protected function doPurge() {
-		$conn = $this->getConnection();
-		if ( !$conn ) {
-			return false;
-		}
-		try {
-			$conn->delete( $this->getReadyQueueKey() );
-		} catch ( RedisException $e ) {
-			$this->handleException( $conn, $e );
-
-			return false;
-		}
-
-		return true;
+		return true; // fully and only refreshed by the service
 	}
 
 	/**
@@ -170,37 +114,19 @@ class JobQueueAggregatorRedis extends JobQueueAggregator {
 	}
 
 	/**
-	 * @param RedisConnRef $conn
-	 * @param RedisException $e
-	 * @return void
-	 */
-	protected function handleException( RedisConnRef $conn, $e ) {
-		$this->redisPool->handleError( $conn, $e );
-	}
-
-	/**
 	 * @return string
 	 */
 	private function getReadyQueueKey() {
-		return "jobqueue:aggregator:h-ready-queues:v1"; // global
-	}
-
-	/**
-	 * @param string $type
-	 * @param string $wiki
-	 * @return string
-	 */
-	private function encQueueName( $type, $wiki ) {
-		return rawurlencode( $type ) . '/' . rawurlencode( $wiki );
+		return "jobqueue:aggregator:h-ready-queues:v2"; // global
 	}
 
 	/**
 	 * @param string $name
 	 * @return string
 	 */
-	private function dencQueueName( $name ) {
+	private function decodeQueueName( $name ) {
 		list( $type, $wiki ) = explode( '/', $name, 2 );
 
-		return array( rawurldecode( $type ), rawurldecode( $wiki ) );
+		return [ rawurldecode( $type ), rawurldecode( $wiki ) ];
 	}
 }

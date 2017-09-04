@@ -4,8 +4,7 @@
  * Quickie parser class that can happily read the subset of PHP we need
  * for our localization arrays safely.
  *
- * About an order of magnitude faster than ConfEditor(), but still an
- * order of magnitude slower than eval().
+ * Still an order of magnitude slower than eval().
  */
 class QuickArrayReader {
 	private $vars = array();
@@ -40,39 +39,46 @@ class QuickArrayReader {
 					$varname = trim( substr( $tokens[$i][1], 1 ) );
 					$varindex = null;
 
-					while ( isset( $skipTypes[$tokens[++$i][0]] ) );
+					while ( isset( $skipTypes[$tokens[++$i][0]] ) ) {
+					}
 
 					if ( $tokens[$i] === '[' ) {
-						while ( isset( $skipTypes[$tokens[++$i][0]] ) );
+						while ( isset( $skipTypes[$tokens[++$i][0]] ) ) {
+						}
 
 						if ( isset( $scalarTypes[$tokens[$i][0]] ) ) {
 							$varindex = $this->parseScalar( $tokens[$i] );
 						} else {
 							throw $this->except( $tokens[$i], 'scalar index' );
 						}
-						while ( isset( $skipTypes[$tokens[++$i][0]] ) );
+						while ( isset( $skipTypes[$tokens[++$i][0]] ) ) {
+						}
 
 						if ( $tokens[$i] !== ']' ) {
 							throw $this->except( $tokens[$i], ']' );
 						}
-						while ( isset( $skipTypes[$tokens[++$i][0]] ) );
+						while ( isset( $skipTypes[$tokens[++$i][0]] ) ) {
+						}
 					}
 
 					if ( $tokens[$i] !== '=' ) {
 						throw $this->except( $tokens[$i], '=' );
 					}
-					while ( isset( $skipTypes[$tokens[++$i][0]] ) );
+					while ( isset( $skipTypes[$tokens[++$i][0]] ) ) {
+					}
 
 					if ( isset( $scalarTypes[$tokens[$i][0]] ) ) {
 						$buildval = $this->parseScalar( $tokens[$i] );
 					} elseif ( $tokens[$i][0] === T_ARRAY ) {
-						while ( isset( $skipTypes[$tokens[++$i][0]] ) );
+						while ( isset( $skipTypes[$tokens[++$i][0]] ) ) {
+						}
 						if ( $tokens[$i] !== '(' ) {
 							throw $this->except( $tokens[$i], '(' );
 						}
 						$buildval = array();
 						do {
-							while ( isset( $skipTypes[$tokens[++$i][0]] ) );
+							while ( isset( $skipTypes[$tokens[++$i][0]] ) ) {
+							}
 
 							if ( $tokens[$i] === ')' ) {
 								break;
@@ -80,12 +86,14 @@ class QuickArrayReader {
 							if ( isset( $scalarTypes[$tokens[$i][0]] ) ) {
 								$key = $this->parseScalar( $tokens[$i] );
 							}
-							while ( isset( $skipTypes[$tokens[++$i][0]] ) );
+							while ( isset( $skipTypes[$tokens[++$i][0]] ) ) {
+							}
 
 							if ( $tokens[$i][0] !== T_DOUBLE_ARROW ) {
 								throw $this->except( $tokens[$i], '=>' );
 							}
-							while ( isset( $skipTypes[$tokens[++$i][0]] ) );
+							while ( isset( $skipTypes[$tokens[++$i][0]] ) ) {
+							}
 
 							if ( isset( $scalarTypes[$tokens[$i][0]] ) ) {
 								$val = $this->parseScalar( $tokens[$i] );
@@ -93,7 +101,8 @@ class QuickArrayReader {
 							wfSuppressWarnings();
 							$buildval[$key] = $val;
 							wfRestoreWarnings();
-							while ( isset( $skipTypes[$tokens[++$i][0]] ) );
+							while ( isset( $skipTypes[$tokens[++$i][0]] ) ) {
+							}
 
 							if ( $tokens[$i] === ',' ) {
 								continue;
@@ -113,7 +122,8 @@ class QuickArrayReader {
 						$this->vars[$varname][$varindex] = $buildval;
 						wfRestoreWarnings();
 					}
-					while ( isset( $skipTypes[$tokens[++$i][0]] ) );
+					while ( isset( $skipTypes[$tokens[++$i][0]] ) ) {
+					}
 					if ( $tokens[$i] !== ';' ) {
 						throw $this->except( $tokens[$i], ';' );
 					}

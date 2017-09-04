@@ -1,8 +1,7 @@
 <?php
 /** Kashmiri (Devanagari script) (कॉशुर)
  *
- * See MessagesQqq.php for message documentation incl. usage of parameters
- * To improve a translation please visit http://translatewiki.net
+ * To improve a translation please visit https://translatewiki.net
  *
  * @ingroup Language
  * @file
@@ -11,7 +10,7 @@
  * @author VibhasKS
  */
 
-$namespaceNames = array(
+$namespaceNames = [
 	NS_MEDIA            => 'मीडिया',
 	NS_SPECIAL          => 'खास',
 	NS_TALK             => 'बहज़',
@@ -28,9 +27,9 @@ $namespaceNames = array(
 	NS_HELP_TALK        => 'म॒दत_बहज़',
 	NS_CATEGORY         => 'ज़ॉज़',
 	NS_CATEGORY_TALK    => 'ज़ॉज़_बहज़',
-);
+];
 
-$digitTransformTable = array(
+$digitTransformTable = [
 	'0' => '०', # &#x0966;
 	'1' => '१', # &#x0967;
 	'2' => '२', # &#x0968;
@@ -41,5 +40,5 @@ $digitTransformTable = array(
 	'7' => '७', # &#x096d;
 	'8' => '८', # &#x096e;
 	'9' => '९', # &#x096f;
-);
+];
 

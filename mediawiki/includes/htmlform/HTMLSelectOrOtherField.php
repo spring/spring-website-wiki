@@ -2,6 +2,9 @@
 
 /**
  * Select dropdown field, with an additional "other" textbox.
+ *
+ * HTMLComboboxField implements the same functionality using a single form field
+ * and should be used instead.
  */
 class HTMLSelectOrOtherField extends HTMLTextField {
 	function __construct( $params ) {
@@ -12,7 +15,8 @@ class HTMLSelectOrOtherField extends HTMLTextField {
 				isset( $params['other'] )
 					? $params['other']
 					: wfMessage( 'htmlform-selectorother-other' )->text();
-			$this->mOptions[$msg] = 'other';
+			// Have 'other' always as first element
+			$this->mOptions = [ $msg => 'other' ] + $this->mOptions;
 		}
 
 	}
@@ -34,7 +38,7 @@ class HTMLSelectOrOtherField extends HTMLTextField {
 
 		$select->setAttribute( 'class', 'mw-htmlform-select-or-other' );
 
-		$tbAttribs = array( 'id' => $this->mID . '-other', 'size' => $this->getSize() );
+		$tbAttribs = [ 'id' => $this->mID . '-other', 'size' => $this->getSize() ];
 
 		if ( !empty( $this->mParams['disabled'] ) ) {
 			$select->setAttribute( 'disabled', 'disabled' );
@@ -61,10 +65,14 @@ class HTMLSelectOrOtherField extends HTMLTextField {
 		return "$select<br />\n$textbox";
 	}
 
+	function getInputOOUI( $value ) {
+		return false;
+	}
+
 	/**
-	 * @param $request WebRequest
+	 * @param WebRequest $request
 	 *
-	 * @return String
+	 * @return string
 	 */
 	function loadDataFromRequest( $request ) {
 		if ( $request->getCheck( $this->mName ) ) {

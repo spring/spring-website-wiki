@@ -23,7 +23,7 @@
 /**
  * Standard output handler for use with ob_start
  *
- * @param $s string
+ * @param string $s
  *
  * @return string
  */
@@ -96,7 +96,7 @@ function wfRequestExtension() {
  * Handler that compresses data with gzip if allowed by the Accept header.
  * Unlike ob_gzhandler, it works for HEAD requests too.
  *
- * @param $s string
+ * @param string $s
  *
  * @return string
  */
@@ -129,16 +129,17 @@ function wfGzipHandler( $s ) {
 	$headers = headers_list();
 	$foundVary = false;
 	foreach ( $headers as $header ) {
-		if ( substr( $header, 0, 5 ) == 'Vary:' ) {
+		$headerName = strtolower( substr( $header, 0, 5 ) );
+		if ( $headerName == 'vary:' ) {
 			$foundVary = true;
 			break;
 		}
 	}
 	if ( !$foundVary ) {
 		header( 'Vary: Accept-Encoding' );
-		global $wgUseXVO;
-		if ( $wgUseXVO ) {
-			header( 'X-Vary-Options: Accept-Encoding;list-contains=gzip' );
+		global $wgUseKeyHeader;
+		if ( $wgUseKeyHeader ) {
+			header( 'Key: Accept-Encoding;match=gzip' );
 		}
 	}
 	return $s;
@@ -147,7 +148,7 @@ function wfGzipHandler( $s ) {
 /**
  * Mangle flash policy tags which open up the site to XSS attacks.
  *
- * @param $s string
+ * @param string $s
  *
  * @return string
  */
@@ -161,12 +162,15 @@ function wfMangleFlashPolicy( $s ) {
 }
 
 /**
- * Add a Content-Length header if possible. This makes it cooperate with squid better.
+ * Add a Content-Length header if possible. This makes it cooperate with CDN better.
  *
- * @param $length int
+ * @param int $length
  */
 function wfDoContentLength( $length ) {
-	if ( !headers_sent() && isset( $_SERVER['SERVER_PROTOCOL'] ) && $_SERVER['SERVER_PROTOCOL'] == 'HTTP/1.0' ) {
+	if ( !headers_sent()
+		&& isset( $_SERVER['SERVER_PROTOCOL'] )
+		&& $_SERVER['SERVER_PROTOCOL'] == 'HTTP/1.0'
+	) {
 		header( "Content-Length: $length" );
 	}
 }
@@ -174,7 +178,7 @@ function wfDoContentLength( $length ) {
 /**
  * Replace the output with an error if the HTML is not valid
  *
- * @param $s string
+ * @param string $s
  *
  * @return string
  */
@@ -191,13 +195,13 @@ function wfHtmlValidationHandler( $s ) {
 	$out .= Html::openElement( 'ul' );
 
 	$error = strtok( $errors, "\n" );
-	$badLines = array();
+	$badLines = [];
 	while ( $error !== false ) {
 		if ( preg_match( '/^line (\d+)/', $error, $m ) ) {
 			$lineNum = intval( $m[1] );
 			$badLines[$lineNum] = true;
 			$out .= Html::rawElement( 'li', null,
-				Html::element( 'a', array( 'href' => "#line-{$lineNum}" ), $error ) ) . "\n";
+				Html::element( 'a', [ 'href' => "#line-{$lineNum}" ], $error ) ) . "\n";
 		}
 		$error = strtok( "\n" );
 	}
@@ -208,7 +212,7 @@ function wfHtmlValidationHandler( $s ) {
 	$line = strtok( $s, "\n" );
 	$i = 1;
 	while ( $line !== false ) {
-		$attrs = array();
+		$attrs = [];
 		if ( isset( $badLines[$i] ) ) {
 			$attrs['class'] = 'highlight';
 			$attrs['id'] = "line-$i";
@@ -224,7 +228,7 @@ function wfHtmlValidationHandler( $s ) {
 li { white-space: pre }
 CSS;
 
-	$out = Html::htmlHeader( array( 'lang' => 'en', 'dir' => 'ltr' ) ) .
+	$out = Html::htmlHeader( [ 'lang' => 'en', 'dir' => 'ltr' ] ) .
 		Html::rawElement( 'head', null,
 			Html::element( 'title', null, 'HTML validation error' ) .
 			Html::inlineStyle( $style ) ) .

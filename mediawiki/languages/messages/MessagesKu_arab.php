@@ -1,8 +1,7 @@
 <?php
 /** كوردي (عەرەبی)‏ (كوردي (عەرەبی)‏)
  *
- * See MessagesQqq.php for message documentation incl. usage of parameters
- * To improve a translation please visit http://translatewiki.net
+ * To improve a translation please visit https://translatewiki.net
  *
  * @ingroup Language
  * @file
@@ -19,7 +18,7 @@ $fallback = 'ckb';
 
 $rtl = true;
 
-$digitTransformTable = array(
+$digitTransformTable = [
 	'0' => '٠', # &#x0660;
 	'1' => '١', # &#x0661;
 	'2' => '٢', # &#x0662;
@@ -32,5 +31,5 @@ $digitTransformTable = array(
 	'9' => '٩', # &#x0669;
 	'.' => '٫', # &#x066b; wrong table ?
 	',' => '٬', # &#x066c;
-);
+];
 

@@ -54,6 +54,7 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 		if ( $rows === false ) {
 			if ( !$this->including() ) {
 				$this->doHeader( $opts, 0 );
+				$this->getOutput()->setStatusCode( 404 );
 			}
 
 			return;
@@ -64,6 +65,12 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 			$batch->add( NS_USER, $row->rc_user_text );
 			$batch->add( NS_USER_TALK, $row->rc_user_text );
 			$batch->add( $row->rc_namespace, $row->rc_title );
+			if ( $row->rc_source === RecentChange::SRC_LOG ) {
+				$formatter = LogFormatter::newFromRow( $row );
+				foreach ( $formatter->getPreloadTitles() as $title ) {
+					$batch->addObj( $title );
+				}
+			}
 		}
 		$batch->execute();
 
@@ -129,6 +136,7 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 	 * @return FormOptions
 	 */
 	public function getDefaultOptions() {
+		$config = $this->getConfig();
 		$opts = new FormOptions();
 
 		$opts->add( 'hideminor', false );
@@ -137,6 +145,10 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 		$opts->add( 'hideliu', false );
 		$opts->add( 'hidepatrolled', false );
 		$opts->add( 'hidemyself', false );
+
+		if ( $config->get( 'RCWatchCategoryMembership' ) ) {
+			$opts->add( 'hidecategorization', false );
+		}
 
 		$opts->add( 'namespace', '', FormOptions::INTNULL );
 		$opts->add( 'invert', false );
@@ -152,8 +164,8 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 	 */
 	protected function getCustomFilters() {
 		if ( $this->customFilters === null ) {
-			$this->customFilters = array();
-			wfRunHooks( 'ChangesListSpecialPageFilters', array( $this, &$this->customFilters ) );
+			$this->customFilters = [];
+			Hooks::run( 'ChangesListSpecialPageFilters', [ $this, &$this->customFilters ] );
 		}
 
 		return $this->customFilters;
@@ -164,7 +176,7 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 	 *
 	 * Intended for subclassing, e.g. to add a backwards-compatibility layer.
 	 *
-	 * @param FormOptions $parameters
+	 * @param FormOptions $opts
 	 * @return FormOptions
 	 */
 	protected function fetchOptionsFromRequest( $opts ) {
@@ -201,7 +213,7 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 	public function buildMainQueryConds( FormOptions $opts ) {
 		$dbr = $this->getDB();
 		$user = $this->getUser();
-		$conds = array();
+		$conds = [];
 
 		// It makes no sense to hide both anons and logged-in users. When this occurs, try a guess on
 		// what the user meant and either show only bots or force anons to be shown.
@@ -242,6 +254,11 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 				$conds[] = 'rc_user_text != ' . $dbr->addQuotes( $user->getName() );
 			}
 		}
+		if ( $this->getConfig()->get( 'RCWatchCategoryMembership' )
+			&& $opts['hidecategorization'] === true
+		) {
+			$conds[] = 'rc_type != ' . $dbr->addQuotes( RC_CATEGORIZE );
+		}
 
 		// Namespace filtering
 		if ( $opts['namespace'] !== '' ) {
@@ -276,10 +293,10 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 	 * @return bool|ResultWrapper Result or false
 	 */
 	public function doMainQuery( $conds, $opts ) {
-		$tables = array( 'recentchanges' );
+		$tables = [ 'recentchanges' ];
 		$fields = RecentChange::selectFields();
-		$query_options = array();
-		$join_conds = array();
+		$query_options = [];
+		$join_conds = [];
 
 		ChangeTags::modifyDisplayQuery(
 			$tables,
@@ -290,8 +307,8 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 			''
 		);
 
-		if ( !wfRunHooks( 'ChangesListSpecialPageQuery',
-			array( $this->getName(), &$tables, &$fields, &$conds, &$query_options, &$join_conds, $opts ) )
+		if ( !$this->runMainQueryHook( $tables, $fields, $conds, $query_options, $join_conds,
+			$opts )
 		) {
 			return false;
 		}
@@ -308,10 +325,19 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 		);
 	}
 
+	protected function runMainQueryHook( &$tables, &$fields, &$conds,
+		&$query_options, &$join_conds, $opts
+	) {
+		return Hooks::run(
+			'ChangesListSpecialPageQuery',
+			[ $this->getName(), &$tables, &$fields, &$conds, &$query_options, &$join_conds, $opts ]
+		);
+	}
+
 	/**
-	 * Return a DatabaseBase object for reading
+	 * Return a IDatabase object for reading
 	 *
-	 * @return DatabaseBase
+	 * @return IDatabase
 	 */
 	protected function getDB() {
 		return wfGetDB( DB_SLAVE );
@@ -367,7 +393,7 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 	 *
 	 * @param FormOptions $opts
 	 */
-	function setTopText( FormOptions $opts ) {
+	public function setTopText( FormOptions $opts ) {
 		// nothing by default
 	}
 
@@ -377,7 +403,7 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 	 *
 	 * @param FormOptions $opts
 	 */
-	function setBottomText( FormOptions $opts ) {
+	public function setBottomText( FormOptions $opts ) {
 		// nothing by default
 	}
 
@@ -389,58 +415,49 @@ abstract class ChangesListSpecialPage extends SpecialPage {
 	 * @param FormOptions $opts
 	 * @return array
 	 */
-	function getExtraOptions( $opts ) {
-		return array();
+	public function getExtraOptions( $opts ) {
+		return [];
 	}
 
 	/**
 	 * Return the legend displayed within the fieldset
-	 * @todo This should not be static, then we can drop the parameter
-	 * @todo Not called by anything, should be called by doHeader()
 	 *
-	 * @param $context the object available as $this in non-static functions
 	 * @return string
 	 */
-	public static function makeLegend( IContextSource $context ) {
-		global $wgRecentChangesFlags;
+	public function makeLegend() {
+		$context = $this->getContext();
 		$user = $context->getUser();
 		# The legend showing what the letters and stuff mean
-		$legend = Xml::openElement( 'dl' ) . "\n";
+		$legend = Html::openElement( 'dl' ) . "\n";
 		# Iterates through them and gets the messages for both letter and tooltip
-		$legendItems = $wgRecentChangesFlags;
-		if ( !$user->useRCPatrol() ) {
+		$legendItems = $context->getConfig()->get( 'RecentChangesFlags' );
+		if ( !( $user->useRCPatrol() || $user->useNPPatrol() ) ) {
 			unset( $legendItems['unpatrolled'] );
 		}
-		foreach ( $legendItems as $key => $legendInfo ) { # generate items of the legend
-			$label = $legendInfo['title'];
-			$letter = $legendInfo['letter'];
-			$cssClass = isset( $legendInfo['class'] ) ? $legendInfo['class'] : $key;
+		foreach ( $legendItems as $key => $item ) { # generate items of the legend
+			$label = isset( $item['legend'] ) ? $item['legend'] : $item['title'];
+			$letter = $item['letter'];
+			$cssClass = isset( $item['class'] ) ? $item['class'] : $key;
 
-			$legend .= Xml::element( 'dt',
-				array( 'class' => $cssClass ), $context->msg( $letter )->text()
+			$legend .= Html::element( 'dt',
+				[ 'class' => $cssClass ], $context->msg( $letter )->text()
+			) . "\n" .
+			Html::rawElement( 'dd',
+				[ 'class' => Sanitizer::escapeClass( 'mw-changeslist-legend-' . $key ) ],
+				$context->msg( $label )->parse()
 			) . "\n";
-			if ( $key === 'newpage' ) {
-				$legend .= Xml::openElement( 'dd' );
-				$legend .= $context->msg( $label )->escaped();
-				$legend .= ' ' . $context->msg( 'recentchanges-legend-newpage' )->parse();
-				$legend .= Xml::closeElement( 'dd' ) . "\n";
-			} else {
-				$legend .= Xml::element( 'dd', array(),
-					$context->msg( $label )->text()
-				) . "\n";
-			}
 		}
 		# (+-123)
-		$legend .= Xml::tags( 'dt',
-			array( 'class' => 'mw-plusminus-pos' ),
+		$legend .= Html::rawElement( 'dt',
+			[ 'class' => 'mw-plusminus-pos' ],
 			$context->msg( 'recentchanges-legend-plusminus' )->parse()
 		) . "\n";
-		$legend .= Xml::element(
+		$legend .= Html::element(
 			'dd',
-			array( 'class' => 'mw-changeslist-legend-plusminus' ),
+			[ 'class' => 'mw-changeslist-legend-plusminus' ],
 			$context->msg( 'recentchanges-label-plusminus' )->text()
 		) . "\n";
-		$legend .= Xml::closeElement( 'dl' ) . "\n";
+		$legend .= Html::closeElement( 'dl' ) . "\n";
 
 		# Collapsibility
 		$legend =

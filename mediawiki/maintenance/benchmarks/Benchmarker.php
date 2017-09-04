@@ -22,7 +22,6 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  * http://www.gnu.org/copyleft/gpl.html
  *
- * @todo Report PHP version, OS ..
  * @file
  * @ingroup Benchmark
  */
@@ -39,56 +38,63 @@ abstract class Benchmarker extends Maintenance {
 
 	public function __construct() {
 		parent::__construct();
-		$this->addOption( 'count', "How many time to run a benchmark", false, true );
+		$this->addOption( 'count', "How many times to run a benchmark", false, true );
 	}
 
 	public function bench( array $benchs ) {
 		$bench_number = 0;
 		$count = $this->getOption( 'count', 100 );
 
-		foreach( $benchs as $bench ) {
+		foreach ( $benchs as $bench ) {
 			// handle empty args
-			if( !array_key_exists( 'args', $bench ) ) {
-				$bench['args'] = array();
+			if ( !array_key_exists( 'args', $bench ) ) {
+				$bench['args'] = [];
 			}
 
 			$bench_number++;
 			$start = microtime( true );
-			for( $i = 0; $i < $count; $i++ ) {
+			for ( $i = 0; $i < $count; $i++ ) {
 				call_user_func_array( $bench['function'], $bench['args'] );
 			}
 			$delta = microtime( true ) - $start;
 
 			// function passed as a callback
-			if( is_array( $bench['function'] ) ) {
+			if ( is_array( $bench['function'] ) ) {
 				$ret = get_class( $bench['function'][0] ) . '->' . $bench['function'][1];
 				$bench['function'] = $ret;
 			}
 
-			$this->results[$bench_number] = array(
-				'function'  => $bench['function'],
+			$this->results[$bench_number] = [
+				'function' => $bench['function'],
 				'arguments' => $bench['args'],
-				'count'     => $count,
-				'delta'     => $delta,
-				'average'   => $delta / $count,
-				);
+				'count' => $count,
+				'delta' => $delta,
+				'average' => $delta / $count,
+			];
 		}
 	}
 
 	public function getFormattedResults() {
-		$ret = '';
-		foreach( $this->results as $res ) {
+		$ret = sprintf( "Running PHP version %s (%s) on %s %s %s\n\n",
+			phpversion(),
+			php_uname( 'm' ),
+			php_uname( 's' ),
+			php_uname( 'r' ),
+			php_uname( 'v' )
+		);
+		foreach ( $this->results as $res ) {
 			// show function with args
 			$ret .= sprintf( "%s times: function %s(%s) :\n",
 				$res['count'],
 				$res['function'],
-				join( ', ', $res['arguments'] )
+				implode( ', ', $res['arguments'] )
 			);
 			$ret .= sprintf( "   %6.2fms (%6.2fms each)\n",
 				$res['delta'] * 1000,
 				$res['average'] * 1000
 			);
 		}
+
 		return $ret;
 	}
 }

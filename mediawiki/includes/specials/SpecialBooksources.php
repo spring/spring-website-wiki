@@ -26,19 +26,14 @@
  * The parser creates links to this page when dealing with ISBNs in wikitext
  *
  * @author Rob Church <robchur@gmail.com>
- * @todo Validate ISBNs using the standard check-digit method
  * @ingroup SpecialPage
  */
 class SpecialBookSources extends SpecialPage {
-
 	/**
 	 * ISBN passed to the page, if any
 	 */
 	private $isbn = '';
 
-	/**
-	 * Constructor
-	 */
 	public function __construct() {
 		parent::__construct( 'Booksources' );
 	}
@@ -51,18 +46,22 @@ class SpecialBookSources extends SpecialPage {
 	public function execute( $isbn ) {
 		$this->setHeaders();
 		$this->outputHeader();
-		$this->isbn = self::cleanIsbn( $isbn ? $isbn : $this->getRequest()->getText( 'isbn' ) );
+		$this->isbn = self::cleanIsbn( $isbn ?: $this->getRequest()->getText( 'isbn' ) );
 		$this->getOutput()->addHTML( $this->makeForm() );
-		if ( strlen( $this->isbn ) > 0 ) {
+		if ( $this->isbn !== '' ) {
 			if ( !self::isValidISBN( $this->isbn ) ) {
-				$this->getOutput()->wrapWikiMsg( "<div class=\"error\">\n$1\n</div>", 'booksources-invalid-isbn' );
+				$this->getOutput()->wrapWikiMsg(
+					"<div class=\"error\">\n$1\n</div>",
+					'booksources-invalid-isbn'
+				);
 			}
 			$this->showList();
 		}
 	}
 
 	/**
-	 * Returns whether a given ISBN (10 or 13) is valid. True indicates validity.
+	 * Return whether a given ISBN (10 or 13) is valid.
+	 *
 	 * @param string $isbn ISBN passed for check
 	 * @return bool
 	 */
@@ -71,7 +70,9 @@ class SpecialBookSources extends SpecialPage {
 		$sum = 0;
 		if ( strlen( $isbn ) == 13 ) {
 			for ( $i = 0; $i < 12; $i++ ) {
-				if ( $i % 2 == 0 ) {
+				if ( $isbn[$i] === 'X' ) {
+					return false;
+				} elseif ( $i % 2 == 0 ) {
 					$sum += $isbn[$i];
 				} else {
 					$sum += 3 * $isbn[$i];
@@ -79,11 +80,14 @@ class SpecialBookSources extends SpecialPage {
 			}
 
 			$check = ( 10 - ( $sum % 10 ) ) % 10;
-			if ( $check == $isbn[12] ) {
+			if ( (string)$check === $isbn[12] ) {
 				return true;
 			}
 		} elseif ( strlen( $isbn ) == 10 ) {
 			for ( $i = 0; $i < 9; $i++ ) {
+				if ( $isbn[$i] === 'X' ) {
+					return false;
+				}
 				$sum += $isbn[$i] * ( $i + 1 );
 			}
 
@@ -91,7 +95,7 @@ class SpecialBookSources extends SpecialPage {
 			if ( $check == 10 ) {
 				$check = "X";
 			}
-			if ( $check == $isbn[9] ) {
+			if ( (string)$check === $isbn[9] ) {
 				return true;
 			}
 		}
@@ -115,14 +119,28 @@ class SpecialBookSources extends SpecialPage {
 	 * @return string
 	 */
 	private function makeForm() {
-		global $wgScript;
-
 		$form = Html::openElement( 'fieldset' ) . "\n";
-		$form .= Html::element( 'legend', array(), $this->msg( 'booksources-search-legend' )->text() ) . "\n";
-		$form .= Html::openElement( 'form', array( 'method' => 'get', 'action' => $wgScript ) ) . "\n";
+		$form .= Html::element(
+			'legend',
+			[],
+			$this->msg( 'booksources-search-legend' )->text()
+		) . "\n";
+		$form .= Html::openElement( 'form', [ 'method' => 'get', 'action' => wfScript() ] ) . "\n";
 		$form .= Html::hidden( 'title', $this->getPageTitle()->getPrefixedText() ) . "\n";
-		$form .= '<p>' . Xml::inputLabel( $this->msg( 'booksources-isbn' )->text(), 'isbn', 'isbn', 20, $this->isbn, array( 'autofocus' => true ) );
-		$form .= '&#160;' . Xml::submitButton( $this->msg( 'booksources-go' )->text() ) . "</p>\n";
+		$form .= '<p>' . Xml::inputLabel(
+			$this->msg( 'booksources-isbn' )->text(),
+			'isbn',
+			'isbn',
+			20,
+			$this->isbn,
+			[ 'autofocus' => '', 'class' => 'mw-ui-input-inline' ]
+		);
+
+		$form .= '&#160;' . Html::submitButton(
+			$this->msg( 'booksources-search' )->text(),
+			[], [ 'mw-ui-progressive' ]
+		) . "</p>\n";
+
 		$form .= Html::closeElement( 'form' ) . "\n";
 		$form .= Html::closeElement( 'fieldset' ) . "\n";
 
@@ -134,14 +152,14 @@ class SpecialBookSources extends SpecialPage {
 	 * format and output them
 	 *
 	 * @throws MWException
-	 * @return string
+	 * @return bool
 	 */
 	private function showList() {
 		global $wgContLang;
 
 		# Hook to allow extensions to insert additional HTML,
 		# e.g. for API-interacting plugins and so on
-		wfRunHooks( 'BookInformation', array( $this->isbn, $this->getOutput() ) );
+		Hooks::run( 'BookInformation', [ $this->isbn, $this->getOutput() ] );
 
 		# Check for a local page such as Project:Book_sources and use that if available
 		$page = $this->msg( 'booksources' )->inContentLanguage()->text();
@@ -151,7 +169,7 @@ class SpecialBookSources extends SpecialPage {
 			$content = $rev->getContent();
 
 			if ( $content instanceof TextContent ) {
-				//XXX: in the future, this could be stored as structured data, defining a list of book sources
+				// XXX: in the future, this could be stored as structured data, defining a list of book sources
 
 				$text = $content->getNativeData();
 				$this->getOutput()->addWikiText( str_replace( 'MAGICNUMBER', $this->isbn, $text ) );
@@ -184,8 +202,9 @@ class SpecialBookSources extends SpecialPage {
 	private function makeListItem( $label, $url ) {
 		$url = str_replace( '$1', $this->isbn, $url );
 
-		return Html::rawElement( 'li', array(),
-			Html::element( 'a', array( 'href' => $url, 'class' => 'external' ), $label ) );
+		return Html::rawElement( 'li', [],
+			Html::element( 'a', [ 'href' => $url, 'class' => 'external' ], $label )
+		);
 	}
 
 	protected function getGroupName() {

@@ -16,6 +16,8 @@ class HTMLEditTools extends HTMLFormField {
 	}
 
 	/**
+	 * @param string $value
+	 * @return string
 	 * @since 1.20
 	 */
 	public function getDiv( $value ) {
@@ -25,6 +27,8 @@ class HTMLEditTools extends HTMLFormField {
 	}
 
 	/**
+	 * @param string $value
+	 * @return string
 	 * @since 1.20
 	 */
 	public function getRaw( $value ) {
@@ -35,7 +39,7 @@ class HTMLEditTools extends HTMLFormField {
 		if ( empty( $this->mParams['message'] ) ) {
 			$msg = $this->msg( 'edittools' );
 		} else {
-			$msg = $this->msg( $this->mParams['message'] );
+			$msg = $this->getMessage( $this->mParams['message'] );
 			if ( $msg->isDisabled() ) {
 				$msg = $this->msg( 'edittools' );
 			}

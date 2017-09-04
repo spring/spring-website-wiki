@@ -27,10 +27,14 @@
  * @ingroup SpecialPage
  */
 class SpecialLockdb extends FormSpecialPage {
-	var $reason = '';
+	protected $reason = '';
 
 	public function __construct() {
 		parent::__construct( 'Lockdb', 'siteadmin' );
+	}
+
+	public function doesWrites() {
+		return true;
 	}
 
 	public function requiresWrite() {
@@ -38,28 +42,26 @@ class SpecialLockdb extends FormSpecialPage {
 	}
 
 	public function checkExecutePermissions( User $user ) {
-		global $wgReadOnlyFile;
-
 		parent::checkExecutePermissions( $user );
 		# If the lock file isn't writable, we can do sweet bugger all
-		if ( !is_writable( dirname( $wgReadOnlyFile ) ) ) {
+		if ( !is_writable( dirname( $this->getConfig()->get( 'ReadOnlyFile' ) ) ) ) {
 			throw new ErrorPageError( 'lockdb', 'lockfilenotwritable' );
 		}
 	}
 
 	protected function getFormFields() {
-		return array(
-			'Reason' => array(
+		return [
+			'Reason' => [
 				'type' => 'textarea',
 				'rows' => 4,
 				'vertical-label' => true,
 				'label-message' => 'enterlockreason',
-			),
-			'Confirm' => array(
+			],
+			'Confirm' => [
 				'type' => 'toggle',
 				'label-message' => 'lockconfirm',
-			),
-		);
+			],
+		];
 	}
 
 	protected function alterForm( HTMLForm $form ) {
@@ -69,15 +71,15 @@ class SpecialLockdb extends FormSpecialPage {
 	}
 
 	public function onSubmit( array $data ) {
-		global $wgContLang, $wgReadOnlyFile;
+		global $wgContLang;
 
 		if ( !$data['Confirm'] ) {
 			return Status::newFatal( 'locknoconfirm' );
 		}
 
-		wfSuppressWarnings();
-		$fp = fopen( $wgReadOnlyFile, 'w' );
-		wfRestoreWarnings();
+		MediaWiki\suppressWarnings();
+		$fp = fopen( $this->getConfig()->get( 'ReadOnlyFile' ), 'w' );
+		MediaWiki\restoreWarnings();
 
 		if ( false === $fp ) {
 			# This used to show a file not found error, but the likeliest reason for fopen()

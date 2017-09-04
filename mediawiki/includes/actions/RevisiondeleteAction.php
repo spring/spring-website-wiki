@@ -27,8 +27,14 @@
  * An action that just pass the request to Special:RevisionDelete
  *
  * @ingroup Actions
+ * @deprecated since 1.25 This class has been replaced by SpecialPageAction, but
+ * you really shouldn't have been using it outside core in the first place
  */
 class RevisiondeleteAction extends FormlessAction {
+	public function __construct( Page $page, IContextSource $context = null ) {
+		wfDeprecated( 'RevisiondeleteAction class', '1.25' );
+		parent::__construct( $page, $context );
+	}
 
 	public function getName() {
 		return 'revisiondelete';
@@ -51,5 +57,9 @@ class RevisiondeleteAction extends FormlessAction {
 		$special->setContext( $this->getContext() );
 		$special->getContext()->setTitle( $special->getPageTitle() );
 		$special->run( '' );
+	}
+
+	public function doesWrites() {
+		return true;
 	}
 }

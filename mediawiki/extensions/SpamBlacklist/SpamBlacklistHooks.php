@@ -1,9 +1,43 @@
 <?php
 
+use MediaWiki\Auth\AuthManager;
+
 /**
  * Hooks for the spam blacklist extension
  */
 class SpamBlacklistHooks {
+
+    /**
+     * T99257: Extension registration does not properly support 2d arrays so set it as a global for now
+     */
+	public static function registerExtension() {
+		global $wgSpamBlacklistFiles, $wgBlacklistSettings, $wgSpamBlacklistSettings;
+		global $wgDisableAuthManager, $wgAuthManagerAutoConfig;
+
+		$wgBlacklistSettings = array(
+			'spam' => array(
+				'files' => array( "https://meta.wikimedia.org/w/index.php?title=Spam_blacklist&action=raw&sb_ver=1" )
+			)
+		);
+
+		/**
+		 * @deprecated
+		 */
+		$wgSpamBlacklistFiles =& $wgBlacklistSettings['spam']['files'];
+
+		/**
+		 * @deprecated
+		 */
+		$wgSpamBlacklistSettings =& $wgBlacklistSettings['spam'];
+
+		if ( class_exists( AuthManager::class ) && !$wgDisableAuthManager ) {
+			$wgAuthManagerAutoConfig['preauth'][SpamBlacklistPreAuthenticationProvider::class] =
+				[ 'class' => SpamBlacklistPreAuthenticationProvider::class ];
+		} else {
+			Hooks::register( 'AbortNewAccount', 'SpamBlacklistHooks::abortNewAccount' );
+		}
+	}
+
 	/**
 	 * Hook function for EditFilterMergedContent
 	 *
@@ -25,12 +59,17 @@ class SpamBlacklistHooks {
 		}
 
 		// get the link from the not-yet-saved page content.
-		$pout = $content->getParserOutput( $title );
+		$editInfo = $context->getWikiPage()->prepareContentForEdit( $content );
+		$pout = $editInfo->output;
 		$links = array_keys( $pout->getExternalLinks() );
 
-		// HACK: treat the edit summary as a link
-		if ( $summary !== '' ) {
+		// HACK: treat the edit summary as a link if it contains anything
+		// that looks like it could be a URL or e-mail address.
+		if ( preg_match( '/\S(\.[^\s\d]{2,}|[\/@]\S)/', $summary ) ) {
 			$links[] = $summary;
+		}
+		if ( !$links ) {
+			return true;
 		}
 
 		$spamObj = BaseBlacklist::getInstance( 'spam' );
@@ -46,6 +85,11 @@ class SpamBlacklistHooks {
 
 		// Always return true, EditPage will look at $status->isOk().
 		return true;
+	}
+
+	public static function onParserOutputStashForEdit( WikiPage $page ) {
+		$spamObj = BaseBlacklist::getInstance( 'spam' );
+		$spamObj->warmCachesForFilter( $page->getTitle() );
 	}
 
 	/**
@@ -189,7 +233,7 @@ class SpamBlacklistHooks {
 	 * @param bool     $isWatch
 	 * @param string   $section
 	 * @param int      $flags
-	 * @param int      $revision
+	 * @param Revision|null $revision
 	 * @param Status   $status
 	 * @param int      $baseRevId
 	 *
@@ -208,15 +252,21 @@ class SpamBlacklistHooks {
 		Status $status,
 		$baseRevId
 	) {
-		if( !BaseBlacklist::isLocalSource( $wikiPage->getTitle() ) ) {
+		if ( !BaseBlacklist::isLocalSource( $wikiPage->getTitle() ) ) {
 			return true;
 		}
-		global $wgMemc, $wgDBname;
 
 		// This sucks because every Blacklist needs to be cleared
 		foreach ( BaseBlacklist::getBlacklistTypes() as $type => $class ) {
-			$wgMemc->delete( "$wgDBname:{$type}_blacklist_regexes" );
+			$blacklist = BaseBlacklist::getInstance( $type );
+			$blacklist->clearCache();
 		}
+
+		if ( $revision ) {
+			BaseBlacklist::getInstance( 'spam' )
+				->doLogging( $user, $wikiPage->getTitle(), $revision );
+		}
+
 		return true;
 	}
 }

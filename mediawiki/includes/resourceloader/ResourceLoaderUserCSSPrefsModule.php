@@ -1,6 +1,6 @@
 <?php
 /**
- * Resource loader module for user preference customizations.
+ * ResourceLoader module for user preference customizations.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,52 +27,33 @@
  */
 class ResourceLoaderUserCSSPrefsModule extends ResourceLoaderModule {
 
-	/* Protected Members */
-
-	protected $modifiedTime = array();
-
 	protected $origin = self::ORIGIN_CORE_INDIVIDUAL;
 
-	/* Methods */
-
 	/**
-	 * @param $context ResourceLoaderContext
-	 * @return array|int|Mixed
+	 * @return bool
 	 */
-	public function getModifiedTime( ResourceLoaderContext $context ) {
-		$hash = $context->getHash();
-		if ( !isset( $this->modifiedTime[$hash] ) ) {
-			global $wgUser;
-			$this->modifiedTime[$hash] = wfTimestamp( TS_UNIX, $wgUser->getTouched() );
-		}
-
-		return $this->modifiedTime[$hash];
+	public function enableModuleContentVersion() {
+		return true;
 	}
 
 	/**
-	 * @param $context ResourceLoaderContext
+	 * @param ResourceLoaderContext $context
 	 * @return array
 	 */
 	public function getStyles( ResourceLoaderContext $context ) {
-		global $wgAllowUserCssPrefs, $wgUser;
-
-		if ( !$wgAllowUserCssPrefs ) {
-			return array();
+		if ( !$this->getConfig()->get( 'AllowUserCssPrefs' ) ) {
+			return [];
 		}
 
-		$options = $wgUser->getOptions();
+		$options = $context->getUserObj()->getOptions();
 
 		// Build CSS rules
-		$rules = array();
+		$rules = [];
 
-		// Underline: 2 = browser default, 1 = always, 0 = never
+		// Underline: 2 = skin default, 1 = always, 0 = never
 		if ( $options['underline'] < 2 ) {
 			$rules[] = "a { text-decoration: " .
 				( $options['underline'] ? 'underline' : 'none' ) . "; }";
-		} else {
-			# The scripts of these languages are very hard to read with underlines
-			$rules[] = 'a:lang(ar), a:lang(kk-arab), a:lang(mzn), ' .
-			'a:lang(ps), a:lang(ur) { text-decoration: none; }';
 		}
 		if ( $options['editfont'] !== 'default' ) {
 			// Double-check that $options['editfont'] consists of safe characters only
@@ -84,7 +65,16 @@ class ResourceLoaderUserCSSPrefsModule extends ResourceLoaderModule {
 		if ( $this->getFlip( $context ) ) {
 			$style = CSSJanus::transform( $style, true, false );
 		}
-		return array( 'all' => $style );
+		return [ 'all' => $style ];
+	}
+
+	/**
+	 * @param ResourceLoaderContext $context
+	 * @return bool
+	 */
+	public function isKnownEmpty( ResourceLoaderContext $context ) {
+		$styles = $this->getStyles( $context );
+		return isset( $styles['all'] ) && $styles['all'] === '';
 	}
 
 	/**
@@ -92,12 +82,5 @@ class ResourceLoaderUserCSSPrefsModule extends ResourceLoaderModule {
 	 */
 	public function getGroup() {
 		return 'private';
-	}
-
-	/**
-	 * @return array
-	 */
-	public function getDependencies() {
-		return array( 'mediawiki.user' );
 	}
 }

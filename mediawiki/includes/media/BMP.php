@@ -32,7 +32,7 @@ class BmpHandler extends BitmapHandler {
 	 * @param File $file
 	 * @return bool
 	 */
-	function mustRender( $file ) {
+	public function mustRender( $file ) {
 		return true;
 	}
 
@@ -45,13 +45,13 @@ class BmpHandler extends BitmapHandler {
 	 * @return array
 	 */
 	function getThumbType( $text, $mime, $params = null ) {
-		return array( 'png', 'image/png' );
+		return [ 'png', 'image/png' ];
 	}
 
 	/**
 	 * Get width and height from the bmp header.
 	 *
-	 * @param $image
+	 * @param File $image
 	 * @param string $filename
 	 * @return array
 	 */
@@ -71,10 +71,10 @@ class BmpHandler extends BitmapHandler {
 		try {
 			$w = wfUnpack( 'V', $w, 4 );
 			$h = wfUnpack( 'V', $h, 4 );
-		} catch ( MWException $e ) {
+		} catch ( Exception $e ) {
 			return false;
 		}
 
-		return array( $w[1], $h[1] );
+		return [ $w[1], $h[1] ];
 	}
 }

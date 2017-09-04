@@ -28,7 +28,7 @@
  * @since 1.18
  */
 class GenderCache {
-	protected $cache = array();
+	protected $cache = [];
 	protected $default;
 	protected $misses = 0;
 	protected $missLimit = 1000;
@@ -50,7 +50,7 @@ class GenderCache {
 
 	/**
 	 * Returns the default gender option in this wiki.
-	 * @return String
+	 * @return string
 	 */
 	protected function getDefault() {
 		if ( $this->default === null ) {
@@ -62,9 +62,9 @@ class GenderCache {
 
 	/**
 	 * Returns the gender for given username.
-	 * @param string $username or User: username
-	 * @param string $caller the calling method
-	 * @return String
+	 * @param string|User $username Username
+	 * @param string $caller The calling method
+	 * @return string
 	 */
 	public function getGenderOf( $username, $caller = '' ) {
 		global $wgUser;
@@ -97,11 +97,11 @@ class GenderCache {
 	/**
 	 * Wrapper for doQuery that processes raw LinkBatch data.
 	 *
-	 * @param $data
-	 * @param $caller
+	 * @param array $data
+	 * @param string $caller
 	 */
 	public function doLinkBatch( $data, $caller = '' ) {
-		$users = array();
+		$users = [];
 		foreach ( $data as $ns => $pagenames ) {
 			if ( !MWNamespace::hasGenderDistinction( $ns ) ) {
 				continue;
@@ -118,11 +118,11 @@ class GenderCache {
 	 * Wrapper for doQuery that processes a title or string array.
 	 *
 	 * @since 1.20
-	 * @param $titles List: array of Title objects or strings
-	 * @param string $caller the calling method
+	 * @param array $titles Array of Title objects or strings
+	 * @param string $caller The calling method
 	 */
 	public function doTitlesArray( $titles, $caller = '' ) {
-		$users = array();
+		$users = [];
 		foreach ( $titles as $title ) {
 			$titleObj = is_string( $title ) ? Title::newFromText( $title ) : $title;
 			if ( !$titleObj ) {
@@ -139,13 +139,13 @@ class GenderCache {
 
 	/**
 	 * Preloads genders for given list of users.
-	 * @param $users List|String: usernames
-	 * @param string $caller the calling method
+	 * @param array|string $users Usernames
+	 * @param string $caller The calling method
 	 */
 	public function doQuery( $users, $caller = '' ) {
 		$default = $this->getDefault();
 
-		$usersToCheck = array();
+		$usersToCheck = [];
 		foreach ( (array)$users as $value ) {
 			$name = self::normalizeUsername( $value );
 			// Skip users whose gender setting we already know
@@ -164,17 +164,17 @@ class GenderCache {
 		}
 
 		$dbr = wfGetDB( DB_SLAVE );
-		$table = array( 'user', 'user_properties' );
-		$fields = array( 'user_name', 'up_value' );
-		$conds = array( 'user_name' => $usersToCheck );
-		$joins = array( 'user_properties' =>
-			array( 'LEFT JOIN', array( 'user_id = up_user', 'up_property' => 'gender' ) ) );
+		$table = [ 'user', 'user_properties' ];
+		$fields = [ 'user_name', 'up_value' ];
+		$conds = [ 'user_name' => $usersToCheck ];
+		$joins = [ 'user_properties' =>
+			[ 'LEFT JOIN', [ 'user_id = up_user', 'up_property' => 'gender' ] ] ];
 
 		$comment = __METHOD__;
 		if ( strval( $caller ) !== '' ) {
 			$comment .= "/$caller";
 		}
-		$res = $dbr->select( $table, $fields, $conds, $comment, array(), $joins );
+		$res = $dbr->select( $table, $fields, $conds, $comment, [], $joins );
 
 		foreach ( $res as $row ) {
 			$this->cache[$row->user_name] = $row->up_value ? $row->up_value : $default;

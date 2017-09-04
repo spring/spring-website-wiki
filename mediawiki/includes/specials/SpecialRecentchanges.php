@@ -50,13 +50,17 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		}
 
 		// 10 seconds server-side caching max
-		$this->getOutput()->setSquidMaxage( 10 );
+		$this->getOutput()->setCdnMaxage( 10 );
 		// Check if the client has a cached version
 		$lastmod = $this->checkLastModified();
 		if ( $lastmod === false ) {
 			return;
 		}
 
+		$this->addHelpLink(
+			'//meta.wikimedia.org/wiki/Special:MyLanguage/Help:Recent_changes',
+			true
+		);
 		parent::execute( $subpage );
 	}
 
@@ -79,6 +83,7 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		$opts->add( 'hideliu', false );
 		$opts->add( 'hidepatrolled', $user->getBoolOption( 'hidepatrolled' ) );
 		$opts->add( 'hidemyself', false );
+		$opts->add( 'hidecategorization', $user->getBoolOption( 'hidecategorization' ) );
 
 		$opts->add( 'categories', '' );
 		$opts->add( 'categories_any', false );
@@ -95,7 +100,7 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 	protected function getCustomFilters() {
 		if ( $this->customFilters === null ) {
 			$this->customFilters = parent::getCustomFilters();
-			wfRunHooks( 'SpecialRecentChangesFilters', array( $this, &$this->customFilters ), '1.23' );
+			Hooks::run( 'SpecialRecentChangesFilters', [ $this, &$this->customFilters ], '1.23' );
 		}
 
 		return $this->customFilters;
@@ -134,12 +139,15 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 			if ( 'hidemyself' === $bit ) {
 				$opts['hidemyself'] = true;
 			}
+			if ( 'hidecategorization' === $bit ) {
+				$opts['hidecategorization'] = true;
+			}
 
 			if ( is_numeric( $bit ) ) {
 				$opts['limit'] = $bit;
 			}
 
-			$m = array();
+			$m = [];
 			if ( preg_match( '/^limit=(\d+)$/', $bit, $m ) ) {
 				$opts['limit'] = $m[1];
 			}
@@ -192,32 +200,30 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 	 * @return bool|ResultWrapper Result or false (for Recentchangeslinked only)
 	 */
 	public function doMainQuery( $conds, $opts ) {
-		global $wgAllowCategorizedRecentChanges;
-
 		$dbr = $this->getDB();
 		$user = $this->getUser();
 
-		$tables = array( 'recentchanges' );
+		$tables = [ 'recentchanges' ];
 		$fields = RecentChange::selectFields();
-		$query_options = array();
-		$join_conds = array();
+		$query_options = [];
+		$join_conds = [];
 
 		// JOIN on watchlist for users
 		if ( $user->getId() && $user->isAllowed( 'viewmywatchlist' ) ) {
 			$tables[] = 'watchlist';
 			$fields[] = 'wl_user';
 			$fields[] = 'wl_notificationtimestamp';
-			$join_conds['watchlist'] = array( 'LEFT JOIN', array(
+			$join_conds['watchlist'] = [ 'LEFT JOIN', [
 				'wl_user' => $user->getId(),
 				'wl_title=rc_title',
 				'wl_namespace=rc_namespace'
-			) );
+			] ];
 		}
 
 		if ( $user->isAllowed( 'rollback' ) ) {
 			$tables[] = 'page';
 			$fields[] = 'page_latest';
-			$join_conds['page'] = array( 'LEFT JOIN', 'rc_cur_id=page_id' );
+			$join_conds['page'] = [ 'LEFT JOIN', 'rc_cur_id=page_id' ];
 		}
 
 		ChangeTags::modifyDisplayQuery(
@@ -229,30 +235,51 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 			$opts['tagfilter']
 		);
 
-		if ( !wfRunHooks( 'SpecialRecentChangesQuery',
-			array( &$conds, &$tables, &$join_conds, $opts, &$query_options, &$fields ),
-			'1.23' )
+		if ( !$this->runMainQueryHook( $tables, $fields, $conds, $query_options, $join_conds,
+			$opts )
 		) {
 			return false;
 		}
 
-		// rc_new is not an ENUM, but adding a redundant rc_new IN (0,1) gives mysql enough
-		// knowledge to use an index merge if it wants (it may use some other index though).
+		// array_merge() is used intentionally here so that hooks can, should
+		// they so desire, override the ORDER BY / LIMIT condition(s); prior to
+		// MediaWiki 1.26 this used to use the plus operator instead, which meant
+		// that extensions weren't able to change these conditions
+		$query_options = array_merge( [
+			'ORDER BY' => 'rc_timestamp DESC',
+			'LIMIT' => $opts['limit'] ], $query_options );
 		$rows = $dbr->select(
 			$tables,
 			$fields,
-			$conds + array( 'rc_new' => array( 0, 1 ) ),
+			// rc_new is not an ENUM, but adding a redundant rc_new IN (0,1) gives mysql enough
+			// knowledge to use an index merge if it wants (it may use some other index though).
+			$conds + [ 'rc_new' => [ 0, 1 ] ],
 			__METHOD__,
-			array( 'ORDER BY' => 'rc_timestamp DESC', 'LIMIT' => $opts['limit'] ) + $query_options,
+			$query_options,
 			$join_conds
 		);
 
 		// Build the final data
-		if ( $wgAllowCategorizedRecentChanges ) {
+		if ( $this->getConfig()->get( 'AllowCategorizedRecentChanges' ) ) {
 			$this->filterByCategories( $rows, $opts );
 		}
 
 		return $rows;
+	}
+
+	protected function runMainQueryHook( &$tables, &$fields, &$conds,
+		&$query_options, &$join_conds, $opts
+	) {
+		return parent::runMainQueryHook( $tables, $fields, $conds, $query_options, $join_conds, $opts )
+			&& Hooks::run(
+				'SpecialRecentChangesQuery',
+				[ &$conds, &$tables, &$join_conds, $opts, &$query_options, &$fields ],
+				'1.23'
+			);
+	}
+
+	protected function getDB() {
+		return wfGetDB( DB_SLAVE, 'recentchanges' );
 	}
 
 	public function outputFeedLinks() {
@@ -264,15 +291,15 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 	 *
 	 * @return array
 	 */
-	private function getFeedQuery() {
-		global $wgFeedLimit;
+	protected function getFeedQuery() {
 		$query = array_filter( $this->getOptions()->getAllValues(), function ( $value ) {
 			// API handles empty parameters in a different way
 			return $value !== '';
 		} );
 		$query['action'] = 'feedrecentchanges';
-		if ( $query['limit'] > $wgFeedLimit ) {
-			$query['limit'] = $wgFeedLimit;
+		$feedLimit = $this->getConfig()->get( 'FeedLimit' );
+		if ( $query['limit'] > $feedLimit ) {
+			$query['limit'] = $feedLimit;
 		}
 
 		return $query;
@@ -285,13 +312,11 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 	 * @param FormOptions $opts
 	 */
 	public function outputChangesList( $rows, $opts ) {
-		global $wgRCShowWatchingUsers, $wgShowUpdatedMarker;
-
 		$limit = $opts['limit'];
 
-		$showWatcherCount = $wgRCShowWatchingUsers
+		$showWatcherCount = $this->getConfig()->get( 'RCShowWatchingUsers' )
 			&& $this->getUser()->getOption( 'shownumberswatching' );
-		$watcherCache = array();
+		$watcherCache = [];
 
 		$dbr = $this->getDB();
 
@@ -299,15 +324,28 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		$list = ChangesList::newFromContext( $this->getContext() );
 		$list->initChangesListRows( $rows );
 
+		$userShowHiddenCats = $this->getUser()->getBoolOption( 'showhiddencats' );
 		$rclistOutput = $list->beginRecentChangesList();
 		foreach ( $rows as $obj ) {
 			if ( $limit == 0 ) {
 				break;
 			}
 			$rc = RecentChange::newFromRow( $obj );
+
+			# Skip CatWatch entries for hidden cats based on user preference
+			if (
+				$rc->getAttribute( 'rc_type' ) == RC_CATEGORIZE &&
+				!$userShowHiddenCats &&
+				$rc->getParam( 'hidden-cat' )
+			) {
+				continue;
+			}
+
 			$rc->counter = $counter++;
 			# Check if the page has been updated since the last visit
-			if ( $wgShowUpdatedMarker && !empty( $obj->wl_notificationtimestamp ) ) {
+			if ( $this->getConfig()->get( 'ShowUpdatedMarker' )
+				&& !empty( $obj->wl_notificationtimestamp )
+			) {
 				$rc->notificationtimestamp = ( $obj->rc_timestamp >= $obj->wl_notificationtimestamp );
 			} else {
 				$rc->notificationtimestamp = false; // Default
@@ -317,14 +355,8 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 			if ( $showWatcherCount && $obj->rc_namespace >= 0 ) {
 				if ( !isset( $watcherCache[$obj->rc_namespace][$obj->rc_title] ) ) {
 					$watcherCache[$obj->rc_namespace][$obj->rc_title] =
-						$dbr->selectField(
-							'watchlist',
-							'COUNT(*)',
-							array(
-								'wl_namespace' => $obj->rc_namespace,
-								'wl_title' => $obj->rc_title,
-							),
-							__METHOD__ . '-watchers'
+						WatchedItemStore::getDefaultInstance()->countWatchers(
+							new TitleValue( (int)$obj->rc_namespace, $obj->rc_title )
 						);
 				}
 				$rc->numberofWatchingusers = $watcherCache[$obj->rc_namespace][$obj->rc_title];
@@ -339,11 +371,14 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		$rclistOutput .= $list->endRecentChangesList();
 
 		if ( $rows->numRows() === 0 ) {
-			$this->getOutput()->addHtml(
+			$this->getOutput()->addHTML(
 				'<div class="mw-changeslist-empty">' .
 				$this->msg( 'recentchanges-noresult' )->parse() .
 				'</div>'
 			);
+			if ( !$this->including() ) {
+				$this->getOutput()->setStatusCode( 404 );
+			}
 		} else {
 			$this->getOutput()->addHTML( $rclistOutput );
 		}
@@ -356,24 +391,22 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 	 * @param int $numRows Number of rows in the result to show after this header
 	 */
 	public function doHeader( $opts, $numRows ) {
-		global $wgScript;
-
 		$this->setTopText( $opts );
 
 		$defaults = $opts->getAllValues();
 		$nondefaults = $opts->getChangedValues();
 
-		$panel = array();
-		$panel[] = self::makeLegend( $this->getContext() );
-		$panel[] = $this->optionsPanel( $defaults, $nondefaults );
+		$panel = [];
+		$panel[] = $this->makeLegend();
+		$panel[] = $this->optionsPanel( $defaults, $nondefaults, $numRows );
 		$panel[] = '<hr />';
 
 		$extraOpts = $this->getExtraOptions( $opts );
 		$extraOptsCount = count( $extraOpts );
 		$count = 0;
-		$submit = ' ' . Xml::submitbutton( $this->msg( 'allpagessubmit' )->text() );
+		$submit = ' ' . Xml::submitButton( $this->msg( 'recentchanges-submit' )->text() );
 
-		$out = Xml::openElement( 'table', array( 'class' => 'mw-recentchanges-table' ) );
+		$out = Xml::openElement( 'table', [ 'class' => 'mw-recentchanges-table' ] );
 		foreach ( $extraOpts as $name => $optionRow ) {
 			# Add submit button to the last row only
 			++$count;
@@ -383,18 +416,18 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 			if ( is_array( $optionRow ) ) {
 				$out .= Xml::tags(
 					'td',
-					array( 'class' => 'mw-label mw-' . $name . '-label' ),
+					[ 'class' => 'mw-label mw-' . $name . '-label' ],
 					$optionRow[0]
 				);
 				$out .= Xml::tags(
 					'td',
-					array( 'class' => 'mw-input' ),
+					[ 'class' => 'mw-input' ],
 					$optionRow[1] . $addSubmit
 				);
 			} else {
 				$out .= Xml::tags(
 					'td',
-					array( 'class' => 'mw-input', 'colspan' => 2 ),
+					[ 'class' => 'mw-input', 'colspan' => 2 ],
 					$optionRow . $addSubmit
 				);
 			}
@@ -409,7 +442,7 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 
 		$t = $this->getPageTitle();
 		$out .= Html::hidden( 'title', $t->getPrefixedText() );
-		$form = Xml::tags( 'form', array( 'action' => $wgScript ), $out );
+		$form = Xml::tags( 'form', [ 'action' => wfScript() ], $out );
 		$panel[] = $form;
 		$panelString = implode( "\n", $panel );
 
@@ -417,7 +450,7 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 			Xml::fieldset(
 				$this->msg( 'recentchanges-legend' )->text(),
 				$panelString,
-				array( 'class' => 'rcoptions' )
+				[ 'class' => 'rcoptions' ]
 			)
 		);
 
@@ -435,11 +468,11 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		$message = $this->msg( 'recentchangestext' )->inContentLanguage();
 		if ( !$message->isDisabled() ) {
 			$this->getOutput()->addWikiText(
-				Html::rawElement( 'p',
-					array( 'lang' => $wgContLang->getCode(), 'dir' => $wgContLang->getDir() ),
+				Html::rawElement( 'div',
+					[ 'lang' => $wgContLang->getHtmlCode(), 'dir' => $wgContLang->getDir() ],
 					"\n" . $message->plain() . "\n"
 				),
-				/* $lineStart */ false,
+				/* $lineStart */ true,
 				/* $interface */ false
 			);
 		}
@@ -452,15 +485,14 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 	 * @return array
 	 */
 	function getExtraOptions( $opts ) {
-		$opts->consumeValues( array(
+		$opts->consumeValues( [
 			'namespace', 'invert', 'associated', 'tagfilter', 'categories', 'categories_any'
-		) );
+		] );
 
-		$extraOpts = array();
+		$extraOpts = [];
 		$extraOpts['namespace'] = $this->namespaceFilterForm( $opts );
 
-		global $wgAllowCategorizedRecentChanges;
-		if ( $wgAllowCategorizedRecentChanges ) {
+		if ( $this->getConfig()->get( 'AllowCategorizedRecentChanges' ) ) {
 			$extraOpts['category'] = $this->categoryFilterForm( $opts );
 		}
 
@@ -471,7 +503,7 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 
 		// Don't fire the hook for subclasses. (Or should we?)
 		if ( $this->getName() === 'Recentchanges' ) {
-			wfRunHooks( 'SpecialRecentChangesPanel', array( &$extraOpts, $opts ) );
+			Hooks::run( 'SpecialRecentChangesPanel', [ &$extraOpts, $opts ] );
 		}
 
 		return $extraOpts;
@@ -508,26 +540,26 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 	 */
 	protected function namespaceFilterForm( FormOptions $opts ) {
 		$nsSelect = Html::namespaceSelector(
-			array( 'selected' => $opts['namespace'], 'all' => '' ),
-			array( 'name' => 'namespace', 'id' => 'namespace' )
+			[ 'selected' => $opts['namespace'], 'all' => '' ],
+			[ 'name' => 'namespace', 'id' => 'namespace' ]
 		);
 		$nsLabel = Xml::label( $this->msg( 'namespace' )->text(), 'namespace' );
 		$invert = Xml::checkLabel(
 			$this->msg( 'invert' )->text(), 'invert', 'nsinvert',
 			$opts['invert'],
-			array( 'title' => $this->msg( 'tooltip-invert' )->text() )
+			[ 'title' => $this->msg( 'tooltip-invert' )->text() ]
 		);
 		$associated = Xml::checkLabel(
 			$this->msg( 'namespace_association' )->text(), 'associated', 'nsassociated',
 			$opts['associated'],
-			array( 'title' => $this->msg( 'tooltip-namespace_association' )->text() )
+			[ 'title' => $this->msg( 'tooltip-namespace_association' )->text() ]
 		);
 
-		return array( $nsLabel, "$nsSelect $invert $associated" );
+		return [ $nsLabel, "$nsSelect $invert $associated" ];
 	}
 
 	/**
-	 * Create a input to filter changes by categories
+	 * Create an input to filter changes by categories
 	 *
 	 * @param FormOptions $opts
 	 * @return array
@@ -539,7 +571,7 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		$input .= ' ' . Xml::checkLabel( $this->msg( 'rc_categories_any' )->text(),
 			'categories_any', 'mw-categories_any', $opts['categories_any'] );
 
-		return array( $label, $input );
+		return [ $label, $input ];
 	}
 
 	/**
@@ -556,7 +588,7 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		}
 
 		# Filter categories
-		$cats = array();
+		$cats = [];
 		foreach ( $categories as $cat ) {
 			$cat = trim( $cat );
 			if ( $cat == '' ) {
@@ -566,9 +598,9 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		}
 
 		# Filter articles
-		$articles = array();
-		$a2r = array();
-		$rowsarr = array();
+		$articles = [];
+		$a2r = [];
+		$rowsarr = [];
 		foreach ( $rows as $k => $r ) {
 			$nt = Title::makeTitle( $r->rc_namespace, $r->rc_title );
 			$id = $nt->getArticleID();
@@ -579,7 +611,7 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 				$articles[] = $id;
 			}
 			if ( !isset( $a2r[$id] ) ) {
-				$a2r[$id] = array();
+				$a2r[$id] = [];
 			}
 			$a2r[$id][] = $k;
 			$rowsarr[$k] = $r;
@@ -591,12 +623,12 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		}
 
 		# Look up
-		$c = new Categoryfinder;
-		$c->seed( $articles, $cats, $opts['categories_any'] ? 'OR' : 'AND' );
-		$match = $c->run();
+		$catFind = new CategoryFinder;
+		$catFind->seed( $articles, $cats, $opts['categories_any'] ? 'OR' : 'AND' );
+		$match = $catFind->run();
 
 		# Filter
-		$newrows = array();
+		$newrows = [];
 		foreach ( $match as $id ) {
 			foreach ( $a2r[$id] as $rev ) {
 				$k = $rev;
@@ -632,7 +664,7 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 			$text = '<strong>' . $text . '</strong>';
 		}
 
-		return Linker::linkKnown( $this->getPageTitle(), $text, array(), $params );
+		return Linker::linkKnown( $this->getPageTitle(), $text, [], $params );
 	}
 
 	/**
@@ -640,11 +672,10 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 	 *
 	 * @param array $defaults
 	 * @param array $nondefaults
+	 * @param int $numRows Number of rows in the result to show after this header
 	 * @return string
 	 */
-	function optionsPanel( $defaults, $nondefaults ) {
-		global $wgRCLinkLimits, $wgRCLinkDays;
-
+	function optionsPanel( $defaults, $nondefaults, $numRows ) {
 		$options = $nondefaults + $defaults;
 
 		$note = '';
@@ -655,51 +686,61 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 
 		$lang = $this->getLanguage();
 		$user = $this->getUser();
+		$config = $this->getConfig();
 		if ( $options['from'] ) {
-			$note .= $this->msg( 'rcnotefrom' )->numParams( $options['limit'] )->params(
-				$lang->userTimeAndDate( $options['from'], $user ),
-				$lang->userDate( $options['from'], $user ),
-				$lang->userTime( $options['from'], $user ) )->parse() . '<br />';
+			$note .= $this->msg( 'rcnotefrom' )
+				->numParams( $options['limit'] )
+				->params(
+					$lang->userTimeAndDate( $options['from'], $user ),
+					$lang->userDate( $options['from'], $user ),
+					$lang->userTime( $options['from'], $user )
+				)
+				->numParams( $numRows )
+				->parse() . '<br />';
 		}
 
 		# Sort data for display and make sure it's unique after we've added user data.
-		$linkLimits = $wgRCLinkLimits;
+		$linkLimits = $config->get( 'RCLinkLimits' );
 		$linkLimits[] = $options['limit'];
 		sort( $linkLimits );
 		$linkLimits = array_unique( $linkLimits );
 
-		$linkDays = $wgRCLinkDays;
+		$linkDays = $config->get( 'RCLinkDays' );
 		$linkDays[] = $options['days'];
 		sort( $linkDays );
 		$linkDays = array_unique( $linkDays );
 
 		// limit links
-		$cl = array();
+		$cl = [];
 		foreach ( $linkLimits as $value ) {
 			$cl[] = $this->makeOptionsLink( $lang->formatNum( $value ),
-				array( 'limit' => $value ), $nondefaults, $value == $options['limit'] );
+				[ 'limit' => $value ], $nondefaults, $value == $options['limit'] );
 		}
 		$cl = $lang->pipeList( $cl );
 
 		// day links, reset 'from' to none
-		$dl = array();
+		$dl = [];
 		foreach ( $linkDays as $value ) {
 			$dl[] = $this->makeOptionsLink( $lang->formatNum( $value ),
-				array( 'days' => $value, 'from' => '' ), $nondefaults, $value == $options['days'] );
+				[ 'days' => $value, 'from' => '' ], $nondefaults, $value == $options['days'] );
 		}
 		$dl = $lang->pipeList( $dl );
 
 		// show/hide links
-		$filters = array(
+		$filters = [
 			'hideminor' => 'rcshowhideminor',
 			'hidebots' => 'rcshowhidebots',
 			'hideanons' => 'rcshowhideanons',
 			'hideliu' => 'rcshowhideliu',
 			'hidepatrolled' => 'rcshowhidepatr',
 			'hidemyself' => 'rcshowhidemine'
-		);
+		];
 
-		$showhide = array( 'show', 'hide' );
+		if ( $config->get( 'RCWatchCategoryMembership' ) ) {
+			$filters['hidecategorization'] = 'rcshowhidecategorization';
+		}
+
+		$showhide = [ 'show', 'hide' ];
 
 		foreach ( $this->getCustomFilters() as $key => $params ) {
 			$filters[$key] = $params['msg'];
@@ -709,12 +750,13 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 			unset( $filters['hidepatrolled'] );
 		}
 
-		$links = array();
+		$links = [];
 		foreach ( $filters as $key => $msg ) {
 			// The following messages are used here:
 			// rcshowhideminor-show, rcshowhideminor-hide, rcshowhidebots-show, rcshowhidebots-hide,
 			// rcshowhideanons-show, rcshowhideanons-hide, rcshowhideliu-show, rcshowhideliu-hide,
-			// rcshowhidepatr-show, rcshowhidepatr-hide, rcshowhidemine-show, rcshowhidemine-hide.
+			// rcshowhidepatr-show, rcshowhidepatr-hide, rcshowhidemine-show, rcshowhidemine-hide,
+			// rcshowhidecategorization-show, rcshowhidecategorization-hide.
 			$linkMessage = $this->msg( $msg . '-' . $showhide[1 - $options[$key]] );
 			// Extensions can define additional filters, but don't need to define the corresponding
 			// messages. If they don't exist, just fall back to 'show' and 'hide'.
@@ -723,8 +765,9 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 			}
 
 			$link = $this->makeOptionsLink( $linkMessage->text(),
-				array( $key => 1 - $options[$key] ), $nondefaults );
-			$links[] = $this->msg( $msg )->rawParams( $link )->escaped();
+				[ $key => 1 - $options[$key] ], $nondefaults );
+			$links[] = "<span class=\"$msg rcshowhideoption\">"
+				. $this->msg( $msg )->rawParams( $link )->escaped() . '</span>';
 		}
 
 		// show from this onward link
@@ -732,13 +775,16 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		$now = $lang->userTimeAndDate( $timestamp, $user );
 		$timenow = $lang->userTime( $timestamp, $user );
 		$datenow = $lang->userDate( $timestamp, $user );
-		$rclinks = $this->msg( 'rclinks' )->rawParams( $cl, $dl, $lang->pipeList( $links ) )
-			->parse();
-		$rclistfrom = $this->makeOptionsLink(
+		$pipedLinks = '<span class="rcshowhide">' . $lang->pipeList( $links ) . '</span>';
+
+		$rclinks = '<span class="rclinks">' . $this->msg( 'rclinks' )->rawParams( $cl, $dl, $pipedLinks )
+			->parse() . '</span>';
+
+		$rclistfrom = '<span class="rclistfrom">' . $this->makeOptionsLink(
 			$this->msg( 'rclistfrom' )->rawParams( $now, $timenow, $datenow )->parse(),
-			array( 'from' => $timestamp ),
+			[ 'from' => $timestamp ],
 			$nondefaults
-		);
+		) . '</span>';
 
 		return "{$note}$rclinks<br />$rclistfrom";
 	}

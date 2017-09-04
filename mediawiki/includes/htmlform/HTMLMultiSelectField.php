@@ -37,30 +37,24 @@ class HTMLMultiSelectField extends HTMLFormField implements HTMLNestedFilterable
 	function formatOptions( $options, $value ) {
 		$html = '';
 
-		$attribs = $this->getAttributes( array( 'disabled', 'tabindex' ) );
-		$elementFunc = array( 'Html', $this->mOptionsLabelsNotFromMessage ? 'rawElement' : 'element' );
+		$attribs = $this->getAttributes( [ 'disabled', 'tabindex' ] );
 
 		foreach ( $options as $label => $info ) {
 			if ( is_array( $info ) ) {
-				$html .= Html::rawElement( 'h1', array(), $label ) . "\n";
+				$html .= Html::rawElement( 'h1', [], $label ) . "\n";
 				$html .= $this->formatOptions( $info, $value );
 			} else {
-				$thisAttribs = array( 'id' => "{$this->mID}-$info", 'value' => $info );
+				$thisAttribs = [
+					'id' => "{$this->mID}-$info",
+					'value' => $info,
+				];
+				$checked = in_array( $info, $value, true );
 
-				$checkbox = Xml::check(
-					$this->mName . '[]',
-					in_array( $info, $value, true ),
-					$attribs + $thisAttribs
-				);
-				$checkbox .= '&#160;' . call_user_func( $elementFunc,
-					'label',
-					array( 'for' => "{$this->mID}-$info" ),
-					$label
-				);
+				$checkbox = $this->getOneCheckbox( $checked, $attribs + $thisAttribs, $label );
 
 				$html .= ' ' . Html::rawElement(
 					'div',
-					array( 'class' => 'mw-htmlform-flatlist-item' ),
+					[ 'class' => 'mw-htmlform-flatlist-item' ],
 					$checkbox
 				);
 			}
@@ -69,17 +63,53 @@ class HTMLMultiSelectField extends HTMLFormField implements HTMLNestedFilterable
 		return $html;
 	}
 
+	protected function getOneCheckbox( $checked, $attribs, $label ) {
+		if ( $this->mParent instanceof OOUIHTMLForm ) {
+			if ( $this->mOptionsLabelsNotFromMessage ) {
+				$label = new OOUI\HtmlSnippet( $label );
+			}
+			return new OOUI\FieldLayout(
+				new OOUI\CheckboxInputWidget( [
+					'name' => "{$this->mName}[]",
+					'selected' => $checked,
+				] + OOUI\Element::configFromHtmlAttributes(
+					$attribs
+				) ),
+				[
+					'label' => $label,
+					'align' => 'inline',
+				]
+			);
+		} else {
+			$elementFunc = [ 'Html', $this->mOptionsLabelsNotFromMessage ? 'rawElement' : 'element' ];
+			$checkbox =
+				Xml::check( "{$this->mName}[]", $checked, $attribs ) .
+				'&#160;' .
+				call_user_func( $elementFunc,
+					'label',
+					[ 'for' => $attribs['id'] ],
+					$label
+				);
+			if ( $this->mParent->getConfig()->get( 'UseMediaWikiUIEverywhere' ) ) {
+				$checkbox = Html::openElement( 'div', [ 'class' => 'mw-ui-checkbox' ] ) .
+					$checkbox .
+					Html::closeElement( 'div' );
+			}
+			return $checkbox;
+		}
+	}
+
 	/**
-	 * @param $request WebRequest
+	 * @param WebRequest $request
 	 *
-	 * @return String
+	 * @return string
 	 */
 	function loadDataFromRequest( $request ) {
 		if ( $this->mParent->getMethod() == 'post' ) {
 			if ( $request->wasPosted() ) {
 				# Checkboxes are just not added to the request arrays if they're not checked,
 				# so it's perfectly possible for there not to be an entry at all
-				return $request->getArray( $this->mName, array() );
+				return $request->getArray( $this->mName, [] );
 			} else {
 				# That's ok, the user has not yet submitted the form, so show the defaults
 				return $this->getDefault();
@@ -91,7 +121,7 @@ class HTMLMultiSelectField extends HTMLFormField implements HTMLNestedFilterable
 			# latter, which basically means that you can't specify 'positive' defaults
 			# for GET forms.
 			# @todo FIXME...
-			return $request->getArray( $this->mName, array() );
+			return $request->getArray( $this->mName, [] );
 		}
 	}
 
@@ -99,7 +129,7 @@ class HTMLMultiSelectField extends HTMLFormField implements HTMLNestedFilterable
 		if ( isset( $this->mDefault ) ) {
 			return $this->mDefault;
 		} else {
-			return array();
+			return [];
 		}
 	}
 
@@ -107,7 +137,7 @@ class HTMLMultiSelectField extends HTMLFormField implements HTMLNestedFilterable
 		$data = HTMLFormField::forceToStringRecursive( $data );
 		$options = HTMLFormField::flattenOptions( $this->getOptions() );
 
-		$res = array();
+		$res = [];
 		foreach ( $options as $opt ) {
 			$res["$opt"] = in_array( $opt, $data, true );
 		}

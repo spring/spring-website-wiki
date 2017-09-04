@@ -34,7 +34,7 @@ class PruneFileCache extends Maintenance {
 
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Build file cache for content pages";
+		$this->addDescription( 'Build file cache for content pages' );
 		$this->addOption( 'agedays', 'How many days old files must be in order to delete', true, true );
 		$this->addOption( 'subdir', 'Prune one $wgFileCacheDirectory subdirectory name', false, true );
 	}
@@ -75,8 +75,8 @@ class PruneFileCache extends Maintenance {
 	}
 
 	/**
-	 * @param $dir string
-	 * @param $report string|bool Use 'report' to report the directories being scanned
+	 * @param string $dir
+	 * @param string|bool $report Use 'report' to report the directories being scanned
 	 */
 	protected function prune_directory( $dir, $report = false ) {
 		$tsNow = time();

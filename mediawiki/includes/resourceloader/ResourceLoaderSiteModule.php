@@ -1,6 +1,6 @@
 <?php
 /**
- * Resource loader module for site customizations.
+ * ResourceLoader module for site customizations.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,40 +27,24 @@
  */
 class ResourceLoaderSiteModule extends ResourceLoaderWikiModule {
 
-	/* Protected Methods */
-
 	/**
-	 * Gets list of pages used by this module
+	 * Get list of pages used by this module
 	 *
-	 * @param $context ResourceLoaderContext
-	 *
-	 * @return Array: List of pages
+	 * @param ResourceLoaderContext $context
+	 * @return array List of pages
 	 */
 	protected function getPages( ResourceLoaderContext $context ) {
-		global $wgUseSiteJs, $wgUseSiteCss;
-
-		$pages = array();
-		if ( $wgUseSiteJs ) {
-			$pages['MediaWiki:Common.js'] = array( 'type' => 'script' );
-			$pages['MediaWiki:' . ucfirst( $context->getSkin() ) . '.js'] = array( 'type' => 'script' );
+		$pages = [];
+		if ( $this->getConfig()->get( 'UseSiteJs' ) ) {
+			$pages['MediaWiki:Common.js'] = [ 'type' => 'script' ];
+			$pages['MediaWiki:' . ucfirst( $context->getSkin() ) . '.js'] = [ 'type' => 'script' ];
 		}
-		if ( $wgUseSiteCss ) {
-			$pages['MediaWiki:Common.css'] = array( 'type' => 'style' );
-			$pages['MediaWiki:' . ucfirst( $context->getSkin() ) . '.css'] = array( 'type' => 'style' );
+		if ( $this->getConfig()->get( 'UseSiteCss' ) ) {
+			$pages['MediaWiki:Common.css'] = [ 'type' => 'style' ];
+			$pages['MediaWiki:' . ucfirst( $context->getSkin() ) . '.css'] = [ 'type' => 'style' ];
+			$pages['MediaWiki:Print.css'] = [ 'type' => 'style', 'media' => 'print' ];
 
 		}
-		$pages['MediaWiki:Print.css'] = array( 'type' => 'style', 'media' => 'print' );
 		return $pages;
-	}
-
-	/* Methods */
-
-	/**
-	 * Gets group name
-	 *
-	 * @return String: Name of group
-	 */
-	public function getGroup() {
-		return 'site';
 	}
 }

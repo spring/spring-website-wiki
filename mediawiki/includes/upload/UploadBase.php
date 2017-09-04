@@ -36,7 +36,11 @@
  * @author Michael Dale
  */
 abstract class UploadBase {
+	/** @var string Local file system path to the file to upload (or a local copy) */
 	protected $mTempPath;
+	/** @var TempFSFile|null Wrapper to handle deleting the temp file */
+	protected $tempFileObj;
+
 	protected $mDesiredDestName, $mDestName, $mRemoveTempFile, $mSourceType;
 	protected $mTitle = false, $mTitleError = 0;
 	protected $mFilteredName, $mFinalExtension;
@@ -44,7 +48,13 @@ abstract class UploadBase {
 	protected $mBlackListedExtensions;
 	protected $mJavaDetected, $mSVGNSError;
 
-	protected static $safeXmlEncodings = array( 'UTF-8', 'ISO-8859-1', 'ISO-8859-2', 'UTF-16', 'UTF-32' );
+	protected static $safeXmlEncodings = [
+		'UTF-8',
+		'ISO-8859-1',
+		'ISO-8859-2',
+		'UTF-16',
+		'UTF-32'
+	];
 
 	const SUCCESS = 0;
 	const OK = 0;
@@ -55,22 +65,17 @@ abstract class UploadBase {
 	const FILETYPE_MISSING = 8;
 	const FILETYPE_BADTYPE = 9;
 	const VERIFICATION_ERROR = 10;
-
-	# HOOK_ABORTED is the new name of UPLOAD_VERIFICATION_ERROR
-	const UPLOAD_VERIFICATION_ERROR = 11;
 	const HOOK_ABORTED = 11;
 	const FILE_TOO_LARGE = 12;
 	const WINDOWS_NONASCII_FILENAME = 13;
 	const FILENAME_TOO_LONG = 14;
 
-	const SESSION_STATUS_KEY = 'wsUploadStatusData';
-
 	/**
-	 * @param $error int
+	 * @param int $error
 	 * @return string
 	 */
 	public function getVerificationErrorCode( $error ) {
-		$code_to_status = array(
+		$code_to_status = [
 			self::EMPTY_FILE => 'empty-file',
 			self::FILE_TOO_LARGE => 'file-too-large',
 			self::FILETYPE_MISSING => 'filetype-missing',
@@ -82,7 +87,7 @@ abstract class UploadBase {
 			self::HOOK_ABORTED => 'hookaborted',
 			self::WINDOWS_NONASCII_FILENAME => 'windows-nonascii-filename',
 			self::FILENAME_TOO_LONG => 'filename-toolong',
-		);
+		];
 		if ( isset( $code_to_status[$error] ) ) {
 			return $code_to_status[$error];
 		}
@@ -111,15 +116,16 @@ abstract class UploadBase {
 	 * identifying the missing permission.
 	 * Can be overridden by subclasses.
 	 *
-	 * @param $user User
-	 * @return bool
+	 * @param User $user
+	 * @return bool|string
 	 */
 	public static function isAllowed( $user ) {
-		foreach ( array( 'upload', 'edit' ) as $permission ) {
+		foreach ( [ 'upload', 'edit' ] as $permission ) {
 			if ( !$user->isAllowed( $permission ) ) {
 				return $permission;
 			}
 		}
+
 		return true;
 	}
 
@@ -134,14 +140,14 @@ abstract class UploadBase {
 	}
 
 	// Upload handlers. Should probably just be a global.
-	static $uploadHandlers = array( 'Stash', 'File', 'Url' );
+	private static $uploadHandlers = [ 'Stash', 'File', 'Url' ];
 
 	/**
 	 * Create a form of UploadBase depending on wpSourceType and initializes it
 	 *
-	 * @param $request WebRequest
-	 * @param $type
-	 * @return null
+	 * @param WebRequest $request
+	 * @param string|null $type
+	 * @return null|UploadBase
 	 */
 	public static function createFromRequest( &$request, $type = null ) {
 		$type = $type ? $type : $request->getVal( 'wpSourceType', 'File' );
@@ -155,7 +161,7 @@ abstract class UploadBase {
 
 		// Give hooks the chance to handle this request
 		$className = null;
-		wfRunHooks( 'UploadCreateFromRequest', array( $type, &$className ) );
+		Hooks::run( 'UploadCreateFromRequest', [ $type, &$className ] );
 		if ( is_null( $className ) ) {
 			$className = 'UploadFrom' . $type;
 			wfDebug( __METHOD__ . ": class name: $className\n" );
@@ -165,31 +171,34 @@ abstract class UploadBase {
 		}
 
 		// Check whether this upload class is enabled
-		if ( !call_user_func( array( $className, 'isEnabled' ) ) ) {
+		if ( !call_user_func( [ $className, 'isEnabled' ] ) ) {
 			return null;
 		}
 
 		// Check whether the request is valid
-		if ( !call_user_func( array( $className, 'isValidRequest' ), $request ) ) {
+		if ( !call_user_func( [ $className, 'isValidRequest' ], $request ) ) {
 			return null;
 		}
 
+		/** @var UploadBase $handler */
 		$handler = new $className;
 
 		$handler->initializeFromRequest( $request );
+
 		return $handler;
 	}
 
 	/**
 	 * Check whether a request if valid for this handler
-	 * @param $request
+	 * @param WebRequest $request
 	 * @return bool
 	 */
 	public static function isValidRequest( $request ) {
 		return false;
 	}
 
-	public function __construct() {}
+	public function __construct() {
+	}
 
 	/**
 	 * Returns the upload type. Should be overridden by child classes
@@ -203,9 +212,9 @@ abstract class UploadBase {
 
 	/**
 	 * Initialize the path information
-	 * @param string $name the desired destination name
-	 * @param string $tempPath the temporary path
-	 * @param int $fileSize the file size
+	 * @param string $name The desired destination name
+	 * @param string $tempPath The temporary path
+	 * @param int $fileSize The file size
 	 * @param bool $removeTempFile (false) remove the temporary file?
 	 * @throws MWException
 	 */
@@ -214,15 +223,34 @@ abstract class UploadBase {
 		if ( FileBackend::isStoragePath( $tempPath ) ) {
 			throw new MWException( __METHOD__ . " given storage path `$tempPath`." );
 		}
-		$this->mTempPath = $tempPath;
-		$this->mFileSize = $fileSize;
+
+		$this->setTempFile( $tempPath, $fileSize );
 		$this->mRemoveTempFile = $removeTempFile;
 	}
 
 	/**
 	 * Initialize from a WebRequest. Override this in a subclass.
+	 *
+	 * @param WebRequest $request
 	 */
 	abstract public function initializeFromRequest( &$request );
+
+	/**
+	 * @param string $tempPath File system path to temporary file containing the upload
+	 * @param integer $fileSize
+	 */
+	protected function setTempFile( $tempPath, $fileSize = null ) {
+		$this->mTempPath = $tempPath;
+		$this->mFileSize = $fileSize ?: null;
+		if ( strlen( $this->mTempPath ) && file_exists( $this->mTempPath ) ) {
+			$this->tempFileObj = new TempFSFile( $this->mTempPath );
+			if ( !$fileSize ) {
+				$this->mFileSize = filesize( $this->mTempPath );
+			}
+		} else {
+			$this->tempFileObj = null;
+		}
+	}
 
 	/**
 	 * Fetch the file. Usually a no-op
@@ -242,7 +270,7 @@ abstract class UploadBase {
 
 	/**
 	 * Return the file size
-	 * @return integer
+	 * @return int
 	 */
 	public function getFileSize() {
 		return $this->mFileSize;
@@ -257,15 +285,15 @@ abstract class UploadBase {
 	}
 
 	/**
-	 * @param string $srcPath the source path
-	 * @return string|bool the real path if it was a virtual URL Returns false on failure
+	 * @param string $srcPath The source path
+	 * @return string|bool The real path if it was a virtual URL Returns false on failure
 	 */
 	function getRealPath( $srcPath ) {
-		wfProfileIn( __METHOD__ );
 		$repo = RepoGroup::singleton()->getLocalRepo();
 		if ( $repo->isVirtualUrl( $srcPath ) ) {
-			// @todo just make uploads work with storage paths
-			// UploadFromStash loads files via virtual URLs
+			/** @todo Just make uploads work with storage paths UploadFromStash
+			 *  loads files via virtual URLs.
+			 */
 			$tmpFile = $repo->getLocalCopy( $srcPath );
 			if ( $tmpFile ) {
 				$tmpFile->bind( $this ); // keep alive with $this
@@ -274,23 +302,21 @@ abstract class UploadBase {
 		} else {
 			$path = $srcPath;
 		}
-		wfProfileOut( __METHOD__ );
+
 		return $path;
 	}
 
 	/**
 	 * Verify whether the upload is sane.
-	 * @return mixed self::OK or else an array with error information
+	 * @return mixed Const self::OK or else an array with error information
 	 */
 	public function verifyUpload() {
-		wfProfileIn( __METHOD__ );
 
 		/**
 		 * If there was no filename or a zero size given, give up quick.
 		 */
 		if ( $this->isEmptyFile() ) {
-			wfProfileOut( __METHOD__ );
-			return array( 'status' => self::EMPTY_FILE );
+			return [ 'status' => self::EMPTY_FILE ];
 		}
 
 		/**
@@ -298,11 +324,10 @@ abstract class UploadBase {
 		 */
 		$maxSize = self::getMaxUploadSize( $this->getSourceType() );
 		if ( $this->mFileSize > $maxSize ) {
-			wfProfileOut( __METHOD__ );
-			return array(
+			return [
 				'status' => self::FILE_TOO_LARGE,
 				'max' => $maxSize,
-			);
+			];
 		}
 
 		/**
@@ -312,11 +337,10 @@ abstract class UploadBase {
 		 */
 		$verification = $this->verifyFile();
 		if ( $verification !== true ) {
-			wfProfileOut( __METHOD__ );
-			return array(
+			return [
 				'status' => self::VERIFICATION_ERROR,
 				'details' => $verification
-			);
+			];
 		}
 
 		/**
@@ -324,32 +348,29 @@ abstract class UploadBase {
 		 */
 		$result = $this->validateName();
 		if ( $result !== true ) {
-			wfProfileOut( __METHOD__ );
 			return $result;
 		}
 
 		$error = '';
-		if ( !wfRunHooks( 'UploadVerification',
-			array( $this->mDestName, $this->mTempPath, &$error ) )
+		if ( !Hooks::run( 'UploadVerification',
+			[ $this->mDestName, $this->mTempPath, &$error ] )
 		) {
-			wfProfileOut( __METHOD__ );
-			return array( 'status' => self::HOOK_ABORTED, 'error' => $error );
+			return [ 'status' => self::HOOK_ABORTED, 'error' => $error ];
 		}
 
-		wfProfileOut( __METHOD__ );
-		return array( 'status' => self::OK );
+		return [ 'status' => self::OK ];
 	}
 
 	/**
 	 * Verify that the name is valid and, if necessary, that we can overwrite
 	 *
-	 * @return mixed true if valid, otherwise and array with 'status'
+	 * @return mixed True if valid, otherwise and array with 'status'
 	 * and other keys
-	 **/
+	 */
 	public function validateName() {
 		$nt = $this->getTitle();
 		if ( is_null( $nt ) ) {
-			$result = array( 'status' => $this->mTitleError );
+			$result = [ 'status' => $this->mTitleError ];
 			if ( $this->mTitleError == self::ILLEGAL_FILENAME ) {
 				$result['filtered'] = $this->mFilteredName;
 			}
@@ -359,6 +380,7 @@ abstract class UploadBase {
 					$result['blacklistedExt'] = $this->mBlackListedExtensions;
 				}
 			}
+
 			return $result;
 		}
 		$this->mDestName = $this->getLocalFile()->getName();
@@ -367,25 +389,24 @@ abstract class UploadBase {
 	}
 
 	/**
-	 * Verify the mime type.
+	 * Verify the MIME type.
 	 *
-	 * @note Only checks that it is not an evil mime. The does it have
-	 *  correct extension given its mime type check is in verifyFile.
-	 * @param string $mime representing the mime
-	 * @return mixed true if the file is verified, an array otherwise
+	 * @note Only checks that it is not an evil MIME. The "does it have
+	 *  correct extension given its MIME type?" check is in verifyFile.
+	 *  in `verifyFile()` that MIME type and file extension correlate.
+	 * @param string $mime Representing the MIME
+	 * @return mixed True if the file is verified, an array otherwise
 	 */
 	protected function verifyMimeType( $mime ) {
 		global $wgVerifyMimeType;
-		wfProfileIn( __METHOD__ );
 		if ( $wgVerifyMimeType ) {
-			wfDebug( "\n\nmime: <$mime> extension: <{$this->mFinalExtension}>\n\n" );
+			wfDebug( "mime: <$mime> extension: <{$this->mFinalExtension}>\n" );
 			global $wgMimeTypeBlacklist;
 			if ( $this->checkFileExtension( $mime, $wgMimeTypeBlacklist ) ) {
-				wfProfileOut( __METHOD__ );
-				return array( 'filetype-badmime', $mime );
+				return [ 'filetype-badmime', $mime ];
 			}
 
-			# Check IE type
+			# Check what Internet Explorer would detect
 			$fp = fopen( $this->mTempPath, 'rb' );
 			$chunk = fread( $fp, 256 );
 			fclose( $fp );
@@ -395,39 +416,44 @@ abstract class UploadBase {
 			$ieTypes = $magic->getIEMimeTypes( $this->mTempPath, $chunk, $extMime );
 			foreach ( $ieTypes as $ieType ) {
 				if ( $this->checkFileExtension( $ieType, $wgMimeTypeBlacklist ) ) {
-					wfProfileOut( __METHOD__ );
-					return array( 'filetype-bad-ie-mime', $ieType );
+					return [ 'filetype-bad-ie-mime', $ieType ];
 				}
 			}
 		}
 
-		wfProfileOut( __METHOD__ );
 		return true;
 	}
 
 	/**
 	 * Verifies that it's ok to include the uploaded file
 	 *
-	 * @return mixed true of the file is verified, array otherwise.
+	 * @return mixed True of the file is verified, array otherwise.
 	 */
 	protected function verifyFile() {
-		global $wgVerifyMimeType;
-		wfProfileIn( __METHOD__ );
+		global $wgVerifyMimeType, $wgDisableUploadScriptChecks;
 
 		$status = $this->verifyPartialFile();
 		if ( $status !== true ) {
-			wfProfileOut( __METHOD__ );
 			return $status;
 		}
 
 		$this->mFileProps = FSFile::getPropsFromPath( $this->mTempPath, $this->mFinalExtension );
-		$mime = $this->mFileProps['file-mime'];
+		$mime = $this->mFileProps['mime'];
 
 		if ( $wgVerifyMimeType ) {
 			# XXX: Missing extension will be caught by validateName() via getTitle()
 			if ( $this->mFinalExtension != '' && !$this->verifyExtension( $mime, $this->mFinalExtension ) ) {
-				wfProfileOut( __METHOD__ );
-				return array( 'filetype-mime-mismatch', $this->mFinalExtension, $mime );
+				return [ 'filetype-mime-mismatch', $this->mFinalExtension, $mime ];
+			}
+		}
+
+		# check for htmlish code and javascript
+		if ( !$wgDisableUploadScriptChecks ) {
+			if ( $this->mFinalExtension == 'svg' || $mime == 'image/svg+xml' ) {
+				$svgStatus = $this->detectScriptInSvg( $this->mTempPath, false );
+				if ( $svgStatus !== false ) {
+					return $svgStatus;
+				}
 			}
 		}
 
@@ -436,19 +462,18 @@ abstract class UploadBase {
 			$handlerStatus = $handler->verifyUpload( $this->mTempPath );
 			if ( !$handlerStatus->isOK() ) {
 				$errors = $handlerStatus->getErrorsArray();
-				wfProfileOut( __METHOD__ );
+
 				return reset( $errors );
 			}
 		}
 
-		wfRunHooks( 'UploadVerifyFile', array( $this, $mime, &$status ) );
+		Hooks::run( 'UploadVerifyFile', [ $this, $mime, &$status ] );
 		if ( $status !== true ) {
-			wfProfileOut( __METHOD__ );
 			return $status;
 		}
 
 		wfDebug( __METHOD__ . ": all clear; passing.\n" );
-		wfProfileOut( __METHOD__ );
+
 		return true;
 	}
 
@@ -458,35 +483,31 @@ abstract class UploadBase {
 	 * Runs the blacklist checks, but not any checks that may
 	 * assume the entire file is present.
 	 *
-	 * @return Mixed true for valid or array with error message key.
+	 * @return mixed True for valid or array with error message key.
 	 */
 	protected function verifyPartialFile() {
 		global $wgAllowJavaUploads, $wgDisableUploadScriptChecks;
-		wfProfileIn( __METHOD__ );
 
 		# getTitle() sets some internal parameters like $this->mFinalExtension
 		$this->getTitle();
 
 		$this->mFileProps = FSFile::getPropsFromPath( $this->mTempPath, $this->mFinalExtension );
 
-		# check mime type, if desired
+		# check MIME type, if desired
 		$mime = $this->mFileProps['file-mime'];
 		$status = $this->verifyMimeType( $mime );
 		if ( $status !== true ) {
-			wfProfileOut( __METHOD__ );
 			return $status;
 		}
 
 		# check for htmlish code and javascript
 		if ( !$wgDisableUploadScriptChecks ) {
 			if ( self::detectScript( $this->mTempPath, $mime, $this->mFinalExtension ) ) {
-				wfProfileOut( __METHOD__ );
-				return array( 'uploadscripted' );
+				return [ 'uploadscripted' ];
 			}
 			if ( $this->mFinalExtension == 'svg' || $mime == 'image/svg+xml' ) {
-				$svgStatus = $this->detectScriptInSvg( $this->mTempPath );
+				$svgStatus = $this->detectScriptInSvg( $this->mTempPath, true );
 				if ( $svgStatus !== false ) {
-					wfProfileOut( __METHOD__ );
 					return $svgStatus;
 				}
 			}
@@ -497,37 +518,35 @@ abstract class UploadBase {
 		if ( !$wgAllowJavaUploads ) {
 			$this->mJavaDetected = false;
 			$zipStatus = ZipDirectoryReader::read( $this->mTempPath,
-				array( $this, 'zipEntryCallback' ) );
+				[ $this, 'zipEntryCallback' ] );
 			if ( !$zipStatus->isOK() ) {
 				$errors = $zipStatus->getErrorsArray();
 				$error = reset( $errors );
 				if ( $error[0] !== 'zip-wrong-format' ) {
-					wfProfileOut( __METHOD__ );
 					return $error;
 				}
 			}
 			if ( $this->mJavaDetected ) {
-				wfProfileOut( __METHOD__ );
-				return array( 'uploadjava' );
+				return [ 'uploadjava' ];
 			}
 		}
 
 		# Scan the uploaded file for viruses
 		$virus = $this->detectVirus( $this->mTempPath );
 		if ( $virus ) {
-			wfProfileOut( __METHOD__ );
-			return array( 'uploadvirus', $virus );
+			return [ 'uploadvirus', $virus ];
 		}
 
-		wfProfileOut( __METHOD__ );
 		return true;
 	}
 
 	/**
 	 * Callback for ZipDirectoryReader to detect Java class files.
+	 *
+	 * @param array $entry
 	 */
 	function zipEntryCallback( $entry ) {
-		$names = array( $entry['name'] );
+		$names = [ $entry['name'] ];
 
 		// If there is a null character, cut off the name at it, because JDK's
 		// ZIP_GetEntry() uses strcmp() if the name hashes match. If a file name
@@ -547,11 +566,13 @@ abstract class UploadBase {
 	}
 
 	/**
-	 * Alias for verifyTitlePermissions. The function was originally 'verifyPermissions'
-	 * but that suggests it's checking the user, when it's really checking the title + user combination.
-	 * @param $user User object to verify the permissions against
+	 * Alias for verifyTitlePermissions. The function was originally
+	 * 'verifyPermissions', but that suggests it's checking the user, when it's
+	 * really checking the title + user combination.
+	 *
+	 * @param User $user User object to verify the permissions against
 	 * @return mixed An array as returned by getUserPermissionsErrors or true
-	 *               in case the user has proper permissions.
+	 *   in case the user has proper permissions.
 	 */
 	public function verifyPermissions( $user ) {
 		return $this->verifyTitlePermissions( $user );
@@ -564,9 +585,9 @@ abstract class UploadBase {
 	 * isAllowed() should be called as well for generic is-user-blocked or
 	 * can-user-upload checking.
 	 *
-	 * @param $user User object to verify the permissions against
+	 * @param User $user User object to verify the permissions against
 	 * @return mixed An array as returned by getUserPermissionsErrors or true
-	 *               in case the user has proper permissions.
+	 *   in case the user has proper permissions.
 	 */
 	public function verifyTitlePermissions( $user ) {
 		/**
@@ -582,17 +603,18 @@ abstract class UploadBase {
 		if ( !$nt->exists() ) {
 			$permErrorsCreate = $nt->getUserPermissionsErrors( 'create', $user );
 		} else {
-			$permErrorsCreate = array();
+			$permErrorsCreate = [];
 		}
 		if ( $permErrors || $permErrorsUpload || $permErrorsCreate ) {
 			$permErrors = array_merge( $permErrors, wfArrayDiff2( $permErrorsUpload, $permErrors ) );
 			$permErrors = array_merge( $permErrors, wfArrayDiff2( $permErrorsCreate, $permErrors ) );
+
 			return $permErrors;
 		}
 
 		$overwriteError = $this->checkOverwrite( $user );
 		if ( $overwriteError !== true ) {
-			return array( $overwriteError );
+			return [ $overwriteError ];
 		}
 
 		return true;
@@ -603,15 +625,15 @@ abstract class UploadBase {
 	 *
 	 * This should not assume that mTempPath is set.
 	 *
-	 * @return Array of warnings
+	 * @return array Array of warnings
 	 */
 	public function checkWarnings() {
 		global $wgLang;
-		wfProfileIn( __METHOD__ );
 
-		$warnings = array();
+		$warnings = [];
 
 		$localFile = $this->getLocalFile();
+		$localFile->load( File::READ_LATEST );
 		$filename = $localFile->getName();
 
 		/**
@@ -623,8 +645,6 @@ abstract class UploadBase {
 
 		if ( $this->mDesiredDestName != $filename && $comparableName != $filename ) {
 			$warnings['badfilename'] = $filename;
-			// Debugging for bug 62241
-			wfDebugLog( 'upload', "Filename: '$filename', mDesiredDestName: '$this->mDesiredDestName', comparableName: '$comparableName'" );
 		}
 
 		// Check whether the file extension is on the unwanted list
@@ -632,23 +652,27 @@ abstract class UploadBase {
 		if ( $wgCheckFileExtensions ) {
 			$extensions = array_unique( $wgFileExtensions );
 			if ( !$this->checkFileExtension( $this->mFinalExtension, $extensions ) ) {
-				$warnings['filetype-unwanted-type'] = array( $this->mFinalExtension,
-					$wgLang->commaList( $extensions ), count( $extensions ) );
+				$warnings['filetype-unwanted-type'] = [ $this->mFinalExtension,
+					$wgLang->commaList( $extensions ), count( $extensions ) ];
 			}
 		}
 
 		global $wgUploadSizeWarning;
 		if ( $wgUploadSizeWarning && ( $this->mFileSize > $wgUploadSizeWarning ) ) {
-			$warnings['large-file'] = array( $wgUploadSizeWarning, $this->mFileSize );
+			$warnings['large-file'] = [ $wgUploadSizeWarning, $this->mFileSize ];
 		}
 
 		if ( $this->mFileSize == 0 ) {
-			$warnings['emptyfile'] = true;
+			$warnings['empty-file'] = true;
 		}
 
 		$exists = self::getExistsWarning( $localFile );
 		if ( $exists !== false ) {
 			$warnings['exists'] = $exists;
+		}
+
+		if ( $localFile->wasDeleted() && !$localFile->exists() ) {
+			$warnings['was-deleted'] = $filename;
 		}
 
 		// Check dupes against existing files
@@ -666,16 +690,15 @@ abstract class UploadBase {
 		}
 
 		// Check dupes against archives
-		$archivedImage = new ArchivedFile( null, 0, "{$hash}.{$this->mFinalExtension}" );
-		if ( $archivedImage->getID() > 0 ) {
-			if ( $archivedImage->userCan( File::DELETED_FILE ) ) {
-				$warnings['duplicate-archive'] = $archivedImage->getName();
+		$archivedFile = new ArchivedFile( null, 0, '', $hash );
+		if ( $archivedFile->getID() > 0 ) {
+			if ( $archivedFile->userCan( File::DELETED_FILE ) ) {
+				$warnings['duplicate-archive'] = $archivedFile->getName();
 			} else {
 				$warnings['duplicate-archive'] = '';
 			}
 		}
 
-		wfProfileOut( __METHOD__ );
 		return $warnings;
 	}
 
@@ -683,15 +706,17 @@ abstract class UploadBase {
 	 * Really perform the upload. Stores the file in the local repo, watches
 	 * if necessary and runs the UploadComplete hook.
 	 *
-	 * @param $comment
-	 * @param $pageText
-	 * @param $watch
-	 * @param $user User
-	 *
-	 * @return Status indicating the whether the upload succeeded.
+	 * @param string $comment
+	 * @param string $pageText
+	 * @param bool $watch Whether the file page should be added to user's watchlist.
+	 *   (This doesn't check $user's permissions.)
+	 * @param User $user
+	 * @param string[] $tags Change tags to add to the log entry and page revision.
+	 *   (This doesn't check $user's permissions.)
+	 * @return Status Indicating the whether the upload succeeded.
 	 */
-	public function performUpload( $comment, $pageText, $watch, $user ) {
-		wfProfileIn( __METHOD__ );
+	public function performUpload( $comment, $pageText, $watch, $user, $tags = [] ) {
+		$this->getLocalFile()->load( File::READ_LATEST );
 
 		$status = $this->getLocalFile()->upload(
 			$this->mTempPath,
@@ -700,18 +725,53 @@ abstract class UploadBase {
 			File::DELETE_SOURCE,
 			$this->mFileProps,
 			false,
-			$user
+			$user,
+			$tags
 		);
 
 		if ( $status->isGood() ) {
 			if ( $watch ) {
-				WatchAction::doWatch( $this->getLocalFile()->getTitle(), $user, WatchedItem::IGNORE_USER_RIGHTS );
+				WatchAction::doWatch(
+					$this->getLocalFile()->getTitle(),
+					$user,
+					User::IGNORE_USER_RIGHTS
+				);
 			}
-			wfRunHooks( 'UploadComplete', array( &$this ) );
+			Hooks::run( 'UploadComplete', [ &$this ] );
+
+			$this->postProcessUpload();
 		}
 
-		wfProfileOut( __METHOD__ );
 		return $status;
+	}
+
+	/**
+	 * Perform extra steps after a successful upload.
+	 *
+	 * @since  1.25
+	 */
+	public function postProcessUpload() {
+		global $wgUploadThumbnailRenderMap;
+
+		$jobs = [];
+
+		$sizes = $wgUploadThumbnailRenderMap;
+		rsort( $sizes );
+
+		$file = $this->getLocalFile();
+
+		foreach ( $sizes as $size ) {
+			if ( $file->isVectorized() || $file->getWidth() > $size ) {
+				$jobs[] = new ThumbnailRenderJob(
+					$file->getTitle(),
+					[ 'transformParams' => [ 'width' => $size ] ]
+				);
+			}
+		}
+
+		if ( $jobs ) {
+			JobQueueGroup::singleton()->push( $jobs );
+		}
 	}
 
 	/**
@@ -722,6 +782,12 @@ abstract class UploadBase {
 	 */
 	public function getTitle() {
 		if ( $this->mTitle !== false ) {
+			return $this->mTitle;
+		}
+		if ( !is_string( $this->mDesiredDestName ) ) {
+			$this->mTitleError = self::ILLEGAL_FILENAME;
+			$this->mTitle = null;
+
 			return $this->mTitle;
 		}
 		/* Assume that if a user specified File:Something.jpg, this is an error
@@ -739,6 +805,7 @@ abstract class UploadBase {
 		if ( strlen( $this->mFilteredName ) > 240 ) {
 			$this->mTitleError = self::FILENAME_TOO_LONG;
 			$this->mTitle = null;
+
 			return $this->mTitle;
 		}
 
@@ -753,6 +820,7 @@ abstract class UploadBase {
 		if ( is_null( $nt ) ) {
 			$this->mTitleError = self::ILLEGAL_FILENAME;
 			$this->mTitle = null;
+
 			return $this->mTitle;
 		}
 		$this->mFilteredName = $nt->getDBkey();
@@ -781,7 +849,7 @@ abstract class UploadBase {
 					# Fix up the other variables
 					$this->mFilteredName .= ".{$this->mFinalExtension}";
 					$nt = Title::makeTitleSafe( NS_FILE, $this->mFilteredName );
-					$ext = array( $this->mFinalExtension );
+					$ext = [ $this->mFinalExtension ];
 				}
 			}
 		}
@@ -795,27 +863,34 @@ abstract class UploadBase {
 		if ( $this->mFinalExtension == '' ) {
 			$this->mTitleError = self::FILETYPE_MISSING;
 			$this->mTitle = null;
+
 			return $this->mTitle;
 		} elseif ( $blackListedExtensions ||
-				( $wgCheckFileExtensions && $wgStrictFileExtensions &&
-					!$this->checkFileExtension( $this->mFinalExtension, $wgFileExtensions ) ) ) {
+			( $wgCheckFileExtensions && $wgStrictFileExtensions &&
+				!$this->checkFileExtension( $this->mFinalExtension, $wgFileExtensions ) )
+		) {
 			$this->mBlackListedExtensions = $blackListedExtensions;
 			$this->mTitleError = self::FILETYPE_BADTYPE;
 			$this->mTitle = null;
+
 			return $this->mTitle;
 		}
 
-		// Windows may be broken with special characters, see bug XXX
-		if ( wfIsWindows() && !preg_match( '/^[\x0-\x7f]*$/', $nt->getText() ) ) {
+		// Windows may be broken with special characters, see bug 1780
+		if ( !preg_match( '/^[\x0-\x7f]*$/', $nt->getText() )
+			&& !RepoGroup::singleton()->getLocalRepo()->backendSupportsUnicodePaths()
+		) {
 			$this->mTitleError = self::WINDOWS_NONASCII_FILENAME;
 			$this->mTitle = null;
+
 			return $this->mTitle;
 		}
 
 		# If there was more than one "extension", reassemble the base
 		# filename to prevent bogus complaints about length
 		if ( count( $ext ) > 1 ) {
-			for ( $i = 0; $i < count( $ext ) - 1; $i++ ) {
+			$iterations = count( $ext ) - 1;
+			for ( $i = 0; $i < $iterations; $i++ ) {
 				$partname .= '.' . $ext[$i];
 			}
 		}
@@ -823,54 +898,59 @@ abstract class UploadBase {
 		if ( strlen( $partname ) < 1 ) {
 			$this->mTitleError = self::MIN_LENGTH_PARTNAME;
 			$this->mTitle = null;
+
 			return $this->mTitle;
 		}
 
 		$this->mTitle = $nt;
+
 		return $this->mTitle;
 	}
 
 	/**
 	 * Return the local file and initializes if necessary.
 	 *
-	 * @return LocalFile|null
+	 * @return LocalFile|UploadStashFile|null
 	 */
 	public function getLocalFile() {
 		if ( is_null( $this->mLocalFile ) ) {
 			$nt = $this->getTitle();
 			$this->mLocalFile = is_null( $nt ) ? null : wfLocalFile( $nt );
 		}
+
 		return $this->mLocalFile;
 	}
 
 	/**
-	 * If the user does not supply all necessary information in the first upload form submission (either by accident or
-	 * by design) then we may want to stash the file temporarily, get more information, and publish the file later.
+	 * If the user does not supply all necessary information in the first upload
+	 * form submission (either by accident or by design) then we may want to
+	 * stash the file temporarily, get more information, and publish the file
+	 * later.
 	 *
-	 * This method will stash a file in a temporary directory for later processing, and save the necessary descriptive info
-	 * into the database.
-	 * This method returns the file object, which also has a 'fileKey' property which can be passed through a form or
-	 * API request to find this stashed file again.
+	 * This method will stash a file in a temporary directory for later
+	 * processing, and save the necessary descriptive info into the database.
+	 * This method returns the file object, which also has a 'fileKey' property
+	 * which can be passed through a form or API request to find this stashed
+	 * file again.
 	 *
-	 * @param $user User
-	 * @return UploadStashFile stashed file
+	 * @param User $user
+	 * @return UploadStashFile Stashed file
 	 */
 	public function stashFile( User $user = null ) {
 		// was stashSessionFile
-		wfProfileIn( __METHOD__ );
 
 		$stash = RepoGroup::singleton()->getLocalRepo()->getUploadStash( $user );
 		$file = $stash->stashFile( $this->mTempPath, $this->getSourceType() );
 		$this->mLocalFile = $file;
 
-		wfProfileOut( __METHOD__ );
 		return $file;
 	}
 
 	/**
-	 * Stash a file in a temporary directory, returning a key which can be used to find the file again. See stashFile().
+	 * Stash a file in a temporary directory, returning a key which can be used
+	 * to find the file again. See stashFile().
 	 *
-	 * @return String: file key
+	 * @return string File key
 	 */
 	public function stashFileGetKey() {
 		return $this->stashFile()->getFileKey();
@@ -879,7 +959,7 @@ abstract class UploadBase {
 	/**
 	 * alias for stashFileGetKey, for backwards compatibility
 	 *
-	 * @return String: file key
+	 * @return string File key
 	 */
 	public function stashSession() {
 		return $this->stashFileGetKey();
@@ -890,9 +970,10 @@ abstract class UploadBase {
 	 * on exit to clean up.
 	 */
 	public function cleanupTempFile() {
-		if ( $this->mRemoveTempFile && $this->mTempPath && file_exists( $this->mTempPath ) ) {
-			wfDebug( __METHOD__ . ": Removing temporary file {$this->mTempPath}\n" );
-			unlink( $this->mTempPath );
+		if ( $this->mRemoveTempFile && $this->tempFileObj ) {
+			// Delete when all relevant TempFSFile handles go out of scope
+			wfDebug( __METHOD__ . ": Marked temporary file '{$this->mTempPath}' for removal\n" );
+			$this->tempFileObj->autocollect();
 		}
 	}
 
@@ -906,22 +987,23 @@ abstract class UploadBase {
 	 * earlier pseudo-'extensions' to determine type and execute
 	 * scripts, so the blacklist needs to check them all.
 	 *
-	 * @param $filename string
+	 * @param string $filename
 	 * @return array
 	 */
 	public static function splitExtensions( $filename ) {
 		$bits = explode( '.', $filename );
 		$basename = array_shift( $bits );
-		return array( $basename, $bits );
+
+		return [ $basename, $bits ];
 	}
 
 	/**
 	 * Perform case-insensitive match against a list of file extensions.
 	 * Returns true if the extension is in the list.
 	 *
-	 * @param $ext String
-	 * @param $list Array
-	 * @return Boolean
+	 * @param string $ext
+	 * @param array $list
+	 * @return bool
 	 */
 	public static function checkFileExtension( $ext, $list ) {
 		return in_array( strtolower( $ext ), $list );
@@ -931,20 +1013,20 @@ abstract class UploadBase {
 	 * Perform case-insensitive match against a list of file extensions.
 	 * Returns an array of matching extensions.
 	 *
-	 * @param $ext Array
-	 * @param $list Array
-	 * @return Boolean
+	 * @param array $ext
+	 * @param array $list
+	 * @return bool
 	 */
 	public static function checkFileExtensionList( $ext, $list ) {
 		return array_intersect( array_map( 'strtolower', $ext ), $list );
 	}
 
 	/**
-	 * Checks if the mime type of the uploaded file matches the file extension.
+	 * Checks if the MIME type of the uploaded file matches the file extension.
 	 *
-	 * @param string $mime the mime type of the uploaded file
-	 * @param string $extension the filename extension that the file is to be served with
-	 * @return Boolean
+	 * @param string $mime The MIME type of the uploaded file
+	 * @param string $extension The filename extension that the file is to be served with
+	 * @return bool
 	 */
 	public static function verifyExtension( $mime, $extension ) {
 		$magic = MimeMagic::singleton();
@@ -953,10 +1035,12 @@ abstract class UploadBase {
 			if ( !$magic->isRecognizableExtension( $extension ) ) {
 				wfDebug( __METHOD__ . ": passing file with unknown detected mime type; " .
 					"unrecognized extension '$extension', can't verify\n" );
+
 				return true;
 			} else {
 				wfDebug( __METHOD__ . ": rejecting file with unknown detected mime type; " .
 					"recognized extension '$extension', so probably invalid file\n" );
+
 				return false;
 			}
 		}
@@ -966,19 +1050,22 @@ abstract class UploadBase {
 		if ( $match === null ) {
 			if ( $magic->getTypesForExtension( $extension ) !== null ) {
 				wfDebug( __METHOD__ . ": No extension known for $mime, but we know a mime for $extension\n" );
+
 				return false;
 			} else {
 				wfDebug( __METHOD__ . ": no file extension known for mime type $mime, passing file\n" );
+
 				return true;
 			}
 		} elseif ( $match === true ) {
 			wfDebug( __METHOD__ . ": mime type $mime matches extension $extension, passing file\n" );
 
-			#TODO: if it's a bitmap, make sure PHP or ImageMagic resp. can handle it!
+			/** @todo If it's a bitmap, make sure PHP or ImageMagick resp. can handle it! */
 			return true;
-
 		} else {
-			wfDebug( __METHOD__ . ": mime type $mime mismatches file extension $extension, rejecting file\n" );
+			wfDebug( __METHOD__
+				. ": mime type $mime mismatches file extension $extension, rejecting file\n" );
+
 			return false;
 		}
 	}
@@ -989,14 +1076,13 @@ abstract class UploadBase {
 	 * potentially harmful. The present implementation will produce false
 	 * positives in some situations.
 	 *
-	 * @param string $file pathname to the temporary upload file
-	 * @param string $mime the mime type of the file
-	 * @param string $extension the extension of the file
-	 * @return Boolean: true if the file contains something looking like embedded scripts
+	 * @param string $file Pathname to the temporary upload file
+	 * @param string $mime The MIME type of the file
+	 * @param string $extension The extension of the file
+	 * @return bool True if the file contains something looking like embedded scripts
 	 */
 	public static function detectScript( $file, $mime, $extension ) {
 		global $wgAllowTitlesInSVG;
-		wfProfileIn( __METHOD__ );
 
 		# ugly hack: for text files, always look at the entire file.
 		# For binary field, just check the first K.
@@ -1012,7 +1098,6 @@ abstract class UploadBase {
 		$chunk = strtolower( $chunk );
 
 		if ( !$chunk ) {
-			wfProfileOut( __METHOD__ );
 			return false;
 		}
 
@@ -1031,12 +1116,11 @@ abstract class UploadBase {
 
 		$chunk = trim( $chunk );
 
-		# @todo FIXME: Convert from UTF-16 if necessary!
+		/** @todo FIXME: Convert from UTF-16 if necessary! */
 		wfDebug( __METHOD__ . ": checking for embedded scripts and HTML stuff\n" );
 
 		# check for HTML doctype
 		if ( preg_match( "/<!DOCTYPE *X?HTML/i", $chunk ) ) {
-			wfProfileOut( __METHOD__ );
 			return true;
 		}
 
@@ -1044,7 +1128,6 @@ abstract class UploadBase {
 		// PHP/expat will interpret the given encoding in the xml declaration (bug 47304)
 		if ( $extension == 'svg' || strpos( $mime, 'image/svg' ) === 0 ) {
 			if ( self::checkXMLEncodingMissmatch( $file ) ) {
-				wfProfileOut( __METHOD__ );
 				return true;
 			}
 		}
@@ -1064,16 +1147,16 @@ abstract class UploadBase {
 		 * Also returns true if Safari would mistake the given file for HTML
 		 * when served with a generic content-type.
 		 */
-		$tags = array(
+		$tags = [
 			'<a href',
 			'<body',
 			'<head',
-			'<html',   #also in safari
+			'<html', # also in safari
 			'<img',
 			'<pre',
-			'<script', #also in safari
+			'<script', # also in safari
 			'<table'
-		);
+		];
 
 		if ( !$wgAllowTitlesInSVG && $extension !== 'svg' && $mime !== 'image/svg' ) {
 			$tags[] = '<title';
@@ -1082,7 +1165,7 @@ abstract class UploadBase {
 		foreach ( $tags as $tag ) {
 			if ( false !== strpos( $chunk, $tag ) ) {
 				wfDebug( __METHOD__ . ": found something that may make it be mistaken for html: $tag\n" );
-				wfProfileOut( __METHOD__ );
+
 				return true;
 			}
 		}
@@ -1097,26 +1180,26 @@ abstract class UploadBase {
 		# look for script-types
 		if ( preg_match( '!type\s*=\s*[\'"]?\s*(?:\w*/)?(?:ecma|java)!sim', $chunk ) ) {
 			wfDebug( __METHOD__ . ": found script types\n" );
-			wfProfileOut( __METHOD__ );
+
 			return true;
 		}
 
 		# look for html-style script-urls
 		if ( preg_match( '!(?:href|src|data)\s*=\s*[\'"]?\s*(?:ecma|java)script:!sim', $chunk ) ) {
 			wfDebug( __METHOD__ . ": found html-style script urls\n" );
-			wfProfileOut( __METHOD__ );
+
 			return true;
 		}
 
 		# look for css-style script-urls
 		if ( preg_match( '!url\s*\(\s*[\'"]?\s*(?:ecma|java)script:!sim', $chunk ) ) {
 			wfDebug( __METHOD__ . ": found css-style script urls\n" );
-			wfProfileOut( __METHOD__ );
+
 			return true;
 		}
 
 		wfDebug( __METHOD__ . ": no scripts found\n" );
-		wfProfileOut( __METHOD__ );
+
 		return false;
 	}
 
@@ -1124,8 +1207,8 @@ abstract class UploadBase {
 	 * Check a whitelist of xml encodings that are known not to be interpreted differently
 	 * by the server's xml parser (expat) and some common browsers.
 	 *
-	 * @param string $file pathname to the temporary upload file
-	 * @return Boolean: true if the file contains an encoding that could be misinterpreted
+	 * @param string $file Pathname to the temporary upload file
+	 * @return bool True if the file contains an encoding that could be misinterpreted
 	 */
 	public static function checkXMLEncodingMissmatch( $file ) {
 		global $wgSVGMetadataCutoff;
@@ -1137,37 +1220,42 @@ abstract class UploadBase {
 				&& !in_array( strtoupper( $encMatch[1] ), self::$safeXmlEncodings )
 			) {
 				wfDebug( __METHOD__ . ": Found unsafe XML encoding '{$encMatch[1]}'\n" );
+
 				return true;
 			}
 		} elseif ( preg_match( "!<\?xml\b!si", $contents ) ) {
 			// Start of XML declaration without an end in the first $wgSVGMetadataCutoff
 			// bytes. There shouldn't be a legitimate reason for this to happen.
 			wfDebug( __METHOD__ . ": Unmatched XML declaration start\n" );
+
 			return true;
 		} elseif ( substr( $contents, 0, 4 ) == "\x4C\x6F\xA7\x94" ) {
 			// EBCDIC encoded XML
 			wfDebug( __METHOD__ . ": EBCDIC Encoded XML\n" );
+
 			return true;
 		}
 
 		// It's possible the file is encoded with multi-byte encoding, so re-encode attempt to
 		// detect the encoding in case is specifies an encoding not whitelisted in self::$safeXmlEncodings
-		$attemptEncodings = array( 'UTF-16', 'UTF-16BE', 'UTF-32', 'UTF-32BE' );
+		$attemptEncodings = [ 'UTF-16', 'UTF-16BE', 'UTF-32', 'UTF-32BE' ];
 		foreach ( $attemptEncodings as $encoding ) {
-			wfSuppressWarnings();
+			MediaWiki\suppressWarnings();
 			$str = iconv( $encoding, 'UTF-8', $contents );
-			wfRestoreWarnings();
-			if ( $str != '' && preg_match( "!<\?xml\b(.*?)\?>!si", $str, $matches )	) {
+			MediaWiki\restoreWarnings();
+			if ( $str != '' && preg_match( "!<\?xml\b(.*?)\?>!si", $str, $matches ) ) {
 				if ( preg_match( $encodingRegex, $matches[1], $encMatch )
 					&& !in_array( strtoupper( $encMatch[1] ), self::$safeXmlEncodings )
 				) {
 					wfDebug( __METHOD__ . ": Found unsafe XML encoding '{$encMatch[1]}'\n" );
+
 					return true;
 				}
 			} elseif ( $str != '' && preg_match( "!<\?xml\b!si", $str ) ) {
 				// Start of XML declaration without an end in the first $wgSVGMetadataCutoff
 				// bytes. There shouldn't be a legitimate reason for this to happen.
 				wfDebug( __METHOD__ . ": Unmatched XML declaration start\n" );
+
 				return true;
 			}
 		}
@@ -1176,54 +1264,92 @@ abstract class UploadBase {
 	}
 
 	/**
-	 * @param $filename string
-	 * @return mixed false of the file is verified (does not contain scripts), array otherwise.
+	 * @param string $filename
+	 * @param bool $partial
+	 * @return mixed False of the file is verified (does not contain scripts), array otherwise.
 	 */
-	protected function detectScriptInSvg( $filename ) {
+	protected function detectScriptInSvg( $filename, $partial ) {
 		$this->mSVGNSError = false;
 		$check = new XmlTypeCheck(
 			$filename,
-			array( $this, 'checkSvgScriptCallback' ),
+			[ $this, 'checkSvgScriptCallback' ],
 			true,
-			array( 'processing_instruction_handler' => 'UploadBase::checkSvgPICallback' )
+			[
+				'processing_instruction_handler' => 'UploadBase::checkSvgPICallback',
+				'external_dtd_handler' => 'UploadBase::checkSvgExternalDTD',
+			]
 		);
 		if ( $check->wellFormed !== true ) {
 			// Invalid xml (bug 58553)
-			return array( 'uploadinvalidxml' );
+			// But only when non-partial (bug 65724)
+			return $partial ? false : [ 'uploadinvalidxml' ];
 		} elseif ( $check->filterMatch ) {
 			if ( $this->mSVGNSError ) {
-				return array( 'uploadscriptednamespace', $this->mSVGNSError );
+				return [ 'uploadscriptednamespace', $this->mSVGNSError ];
 			}
-			return array( 'uploadscripted' );
+
+			return $check->filterMatchType;
 		}
+
 		return false;
 	}
 
 	/**
 	 * Callback to filter SVG Processing Instructions.
-	 * @param $target string processing instruction name
-	 * @param $data string processing instruction attribute and value
+	 * @param string $target Processing instruction name
+	 * @param string $data Processing instruction attribute and value
 	 * @return bool (true if the filter identified something bad)
 	 */
 	public static function checkSvgPICallback( $target, $data ) {
 		// Don't allow external stylesheets (bug 57550)
 		if ( preg_match( '/xml-stylesheet/i', $target ) ) {
-			return true;
+			return [ 'upload-scripted-pi-callback' ];
+		}
+
+		return false;
+	}
+
+	/**
+	 * Verify that DTD urls referenced are only the standard dtds
+	 *
+	 * Browsers seem to ignore external dtds. However just to be on the
+	 * safe side, only allow dtds from the svg standard.
+	 *
+	 * @param string $type PUBLIC or SYSTEM
+	 * @param string $publicId The well-known public identifier for the dtd
+	 * @param string $systemId The url for the external dtd
+	 */
+	public static function checkSvgExternalDTD( $type, $publicId, $systemId ) {
+		// This doesn't include the XHTML+MathML+SVG doctype since we don't
+		// allow XHTML anyways.
+		$allowedDTDs = [
+			'http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd',
+			'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd',
+			'http://www.w3.org/Graphics/SVG/1.1/DTD/svg11-basic.dtd',
+			'http://www.w3.org/Graphics/SVG/1.1/DTD/svg11-tiny.dtd'
+		];
+		if ( $type !== 'PUBLIC'
+			|| !in_array( $systemId, $allowedDTDs )
+			|| strpos( $publicId, "-//W3C//" ) !== 0
+		) {
+			return [ 'upload-scripted-dtd' ];
 		}
 		return false;
 	}
 
 	/**
 	 * @todo Replace this with a whitelist filter!
-	 * @param $element string
-	 * @param $attribs array
+	 * @param string $element
+	 * @param array $attribs
 	 * @return bool
 	 */
 	public function checkSvgScriptCallback( $element, $attribs, $data = null ) {
 
 		list( $namespace, $strippedElement ) = $this->splitXmlNamespace( $element );
 
-		static $validNamespaces = array(
+		// We specifically don't include:
+		// http://www.w3.org/1999/xhtml (bug 60771)
+		static $validNamespaces = [
 			'',
 			'adobe:ns:meta/',
 			'http://creativecommons.org/ns#',
@@ -1253,17 +1379,21 @@ abstract class UploadBase {
 			'http://purl.org/dc/elements/1.1',
 			'http://schemas.microsoft.com/visio/2003/svgextensions/',
 			'http://sodipodi.sourceforge.net/dtd/sodipodi-0.dtd',
+			'http://taptrix.com/inkpad/svg_extensions',
 			'http://web.resource.org/cc/',
 			'http://www.freesoftware.fsf.org/bkchem/cdml',
 			'http://www.inkscape.org/namespaces/inkscape',
+			'http://www.opengis.net/gml',
 			'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
 			'http://www.w3.org/2000/svg',
-		);
+			'http://www.w3.org/tr/rec-rdf-syntax/',
+		];
 
 		if ( !in_array( $namespace, $validNamespaces ) ) {
 			wfDebug( __METHOD__ . ": Non-svg namespace '$namespace' in uploaded file.\n" );
-			// @TODO return a status object to a closure in XmlTypeCheck, for MW1.21+
+			/** @todo Return a status object to a closure in XmlTypeCheck, for MW1.21+ */
 			$this->mSVGNSError = $namespace;
+
 			return true;
 		}
 
@@ -1272,25 +1402,30 @@ abstract class UploadBase {
 		 */
 		if ( $strippedElement == 'script' ) {
 			wfDebug( __METHOD__ . ": Found script element '$element' in uploaded file.\n" );
-			return true;
+
+			return [ 'uploaded-script-svg', $strippedElement ];
 		}
 
-		# e.g., <svg xmlns="http://www.w3.org/2000/svg"> <handler xmlns:ev="http://www.w3.org/2001/xml-events" ev:event="load">alert(1)</handler> </svg>
+		# e.g., <svg xmlns="http://www.w3.org/2000/svg">
+		#  <handler xmlns:ev="http://www.w3.org/2001/xml-events" ev:event="load">alert(1)</handler> </svg>
 		if ( $strippedElement == 'handler' ) {
 			wfDebug( __METHOD__ . ": Found scriptable element '$element' in uploaded file.\n" );
-			return true;
+
+			return [ 'uploaded-script-svg', $strippedElement ];
 		}
 
 		# SVG reported in Feb '12 that used xml:stylesheet to generate javascript block
 		if ( $strippedElement == 'stylesheet' ) {
 			wfDebug( __METHOD__ . ": Found scriptable element '$element' in uploaded file.\n" );
-			return true;
+
+			return [ 'uploaded-script-svg', $strippedElement ];
 		}
 
 		# Block iframes, in case they pass the namespace check
 		if ( $strippedElement == 'iframe' ) {
 			wfDebug( __METHOD__ . ": iframe in uploaded file.\n" );
-			return true;
+
+			return [ 'uploaded-script-svg', $strippedElement ];
 		}
 
 		# Check <style> css
@@ -1298,7 +1433,7 @@ abstract class UploadBase {
 			&& self::checkCssFragment( Sanitizer::normalizeCss( $data ) )
 		) {
 			wfDebug( __METHOD__ . ": hostile css in style element.\n" );
-			return true;
+			return [ 'uploaded-hostile-svg' ];
 		}
 
 		foreach ( $attribs as $attrib => $value ) {
@@ -1306,8 +1441,10 @@ abstract class UploadBase {
 			$value = strtolower( $value );
 
 			if ( substr( $stripped, 0, 2 ) == 'on' ) {
-				wfDebug( __METHOD__ . ": Found event-handler attribute '$attrib'='$value' in uploaded file.\n" );
-				return true;
+				wfDebug( __METHOD__
+					. ": Found event-handler attribute '$attrib'='$value' in uploaded file.\n" );
+
+				return [ 'uploaded-event-handler-on-svg', $attrib, $value ];
 			}
 
 			# href with non-local target (don't allow http://, javascript:, etc)
@@ -1321,7 +1458,7 @@ abstract class UploadBase {
 					wfDebug( __METHOD__ . ": Found href attribute <$strippedElement "
 						. "'$attrib'='$value' in uploaded file.\n" );
 
-					return true;
+					return [ 'uploaded-href-attribute-svg', $strippedElement, $attrib, $value ];
 				}
 			}
 
@@ -1329,11 +1466,14 @@ abstract class UploadBase {
 			# image/svg, text/xml, application/xml, and text/html, which can contain scripts
 			if ( $stripped == 'href' && strncasecmp( 'data:', $value, 5 ) === 0 ) {
 				// rfc2397 parameters. This is only slightly slower than (;[\w;]+)*.
+				// @codingStandardsIgnoreStart Generic.Files.LineLength
 				$parameters = '(?>;[a-zA-Z0-9\!#$&\'*+.^_`{|}~-]+=(?>[a-zA-Z0-9\!#$&\'*+.^_`{|}~-]+|"(?>[\0-\x0c\x0e-\x21\x23-\x5b\x5d-\x7f]+|\\\\[\0-\x7f])*"))*(?:;base64)?';
+				// @codingStandardsIgnoreEnd
+
 				if ( !preg_match( "!^data:\s*image/(gif|jpeg|jpg|png)$parameters,!i", $value ) ) {
 					wfDebug( __METHOD__ . ": Found href to unwhitelisted data: uri "
 						. "\"<$strippedElement '$attrib'='$value'...\" in uploaded file.\n" );
-					return true;
+					return [ 'uploaded-href-unsafe-target-svg', $strippedElement, $attrib, $value ];
 				}
 			}
 
@@ -1345,31 +1485,46 @@ abstract class UploadBase {
 				wfDebug( __METHOD__ . ": Found animate that might be changing href using from "
 					. "\"<$strippedElement '$attrib'='$value'...\" in uploaded file.\n" );
 
-				return true;
+				return [ 'uploaded-animate-svg', $strippedElement, $attrib, $value ];
 			}
 
 			# use set/animate to add event-handler attribute to parent
-			if ( ( $strippedElement == 'set' || $strippedElement == 'animate' ) && $stripped == 'attributename' && substr( $value, 0, 2 ) == 'on' ) {
-				wfDebug( __METHOD__ . ": Found svg setting event-handler attribute with \"<$strippedElement $stripped='$value'...\" in uploaded file.\n" );
-				return true;
+			if ( ( $strippedElement == 'set' || $strippedElement == 'animate' )
+				&& $stripped == 'attributename'
+				&& substr( $value, 0, 2 ) == 'on'
+			) {
+				wfDebug( __METHOD__ . ": Found svg setting event-handler attribute with "
+					. "\"<$strippedElement $stripped='$value'...\" in uploaded file.\n" );
+
+				return [ 'uploaded-setting-event-handler-svg', $strippedElement, $stripped, $value ];
 			}
 
 			# use set to add href attribute to parent element
-			if ( $strippedElement == 'set' && $stripped == 'attributename' && strpos( $value, 'href' ) !== false ) {
+			if ( $strippedElement == 'set'
+				&& $stripped == 'attributename'
+				&& strpos( $value, 'href' ) !== false
+			) {
 				wfDebug( __METHOD__ . ": Found svg setting href attribute '$value' in uploaded file.\n" );
-				return true;
+
+				return [ 'uploaded-setting-href-svg' ];
 			}
 
 			# use set to add a remote / data / script target to an element
-			if ( $strippedElement == 'set' && $stripped == 'to' && preg_match( '!(http|https|data|script):!sim', $value ) ) {
+			if ( $strippedElement == 'set'
+				&& $stripped == 'to'
+				&& preg_match( '!(http|https|data|script):!sim', $value )
+			) {
 				wfDebug( __METHOD__ . ": Found svg setting attribute to '$value' in uploaded file.\n" );
-				return true;
+
+				return [ 'uploaded-wrong-setting-svg', $value ];
 			}
 
 			# use handler attribute with remote / data / script
 			if ( $stripped == 'handler' && preg_match( '!(http|https|data|script):!sim', $value ) ) {
-				wfDebug( __METHOD__ . ": Found svg setting handler with remote/data/script '$attrib'='$value' in uploaded file.\n" );
-				return true;
+				wfDebug( __METHOD__ . ": Found svg setting handler with remote/data/script "
+					. "'$attrib'='$value' in uploaded file.\n" );
+
+				return [ 'uploaded-setting-handler-svg', $attrib, $value ];
 			}
 
 			# use CSS styles to bring in remote code
@@ -1378,29 +1533,33 @@ abstract class UploadBase {
 			) {
 				wfDebug( __METHOD__ . ": Found svg setting a style with "
 					. "remote url '$attrib'='$value' in uploaded file.\n" );
-				return true;
+				return [ 'uploaded-remote-url-svg', $attrib, $value ];
 			}
 
 			# Several attributes can include css, css character escaping isn't allowed
-			$cssAttrs = array( 'font', 'clip-path', 'fill', 'filter', 'marker',
-				'marker-end', 'marker-mid', 'marker-start', 'mask', 'stroke' );
+			$cssAttrs = [ 'font', 'clip-path', 'fill', 'filter', 'marker',
+				'marker-end', 'marker-mid', 'marker-start', 'mask', 'stroke' ];
 			if ( in_array( $stripped, $cssAttrs )
 				&& self::checkCssFragment( $value )
 			) {
 				wfDebug( __METHOD__ . ": Found svg setting a style with "
 					. "remote url '$attrib'='$value' in uploaded file.\n" );
-				return true;
+				return [ 'uploaded-remote-url-svg', $attrib, $value ];
 			}
 
 			# image filters can pull in url, which could be svg that executes scripts
-			if ( $strippedElement == 'image' && $stripped == 'filter' && preg_match( '!url\s*\(!sim', $value ) ) {
-				wfDebug( __METHOD__ . ": Found image filter with url: \"<$strippedElement $stripped='$value'...\" in uploaded file.\n" );
-				return true;
-			}
+			if ( $strippedElement == 'image'
+				&& $stripped == 'filter'
+				&& preg_match( '!url\s*\(!sim', $value )
+			) {
+				wfDebug( __METHOD__ . ": Found image filter with url: "
+					. "\"<$strippedElement $stripped='$value'...\" in uploaded file.\n" );
 
+				return [ 'uploaded-image-filter-svg', $strippedElement, $stripped, $value ];
+			}
 		}
 
-		return false; //No scripts detected
+		return false; // No scripts detected
 	}
 
 	/**
@@ -1457,24 +1616,26 @@ abstract class UploadBase {
 
 	/**
 	 * Divide the element name passed by the xml parser to the callback into URI and prifix.
-	 * @param $name string
-	 * @return array containing the namespace URI and prefix
+	 * @param string $element
+	 * @return array Containing the namespace URI and prefix
 	 */
 	private static function splitXmlNamespace( $element ) {
 		// 'http://www.w3.org/2000/svg:script' -> array( 'http://www.w3.org/2000/svg', 'script' )
 		$parts = explode( ':', strtolower( $element ) );
 		$name = array_pop( $parts );
 		$ns = implode( ':', $parts );
-		return array( $ns, $name );
+
+		return [ $ns, $name ];
 	}
 
 	/**
-	 * @param $name string
+	 * @param string $name
 	 * @return string
 	 */
 	private function stripXmlNamespace( $name ) {
 		// 'http://www.w3.org/2000/svg:script' -> 'script'
 		$parts = explode( ':', strtolower( $name ) );
+
 		return array_pop( $parts );
 	}
 
@@ -1483,26 +1644,25 @@ abstract class UploadBase {
 	 * This relies on the $wgAntivirus and $wgAntivirusSetup variables.
 	 * $wgAntivirusRequired may be used to deny upload if the scan fails.
 	 *
-	 * @param string $file pathname to the temporary upload file
-	 * @return mixed false if not virus is found, NULL if the scan fails or is disabled,
-	 *         or a string containing feedback from the virus scanner if a virus was found.
-	 *         If textual feedback is missing but a virus was found, this function returns true.
+	 * @param string $file Pathname to the temporary upload file
+	 * @return mixed False if not virus is found, null if the scan fails or is disabled,
+	 *   or a string containing feedback from the virus scanner if a virus was found.
+	 *   If textual feedback is missing but a virus was found, this function returns true.
 	 */
 	public static function detectVirus( $file ) {
 		global $wgAntivirus, $wgAntivirusSetup, $wgAntivirusRequired, $wgOut;
-		wfProfileIn( __METHOD__ );
 
 		if ( !$wgAntivirus ) {
 			wfDebug( __METHOD__ . ": virus scanner disabled\n" );
-			wfProfileOut( __METHOD__ );
+
 			return null;
 		}
 
 		if ( !$wgAntivirusSetup[$wgAntivirus] ) {
 			wfDebug( __METHOD__ . ": unknown virus scanner: $wgAntivirus\n" );
 			$wgOut->wrapWikiMsg( "<div class=\"error\">\n$1\n</div>",
-				array( 'virus-badscanner', $wgAntivirus ) );
-			wfProfileOut( __METHOD__ );
+				[ 'virus-badscanner', $wgAntivirus ] );
+
 			return wfMessage( 'virus-unknownscanner' )->text() . " $wgAntivirus";
 		}
 
@@ -1547,7 +1707,9 @@ abstract class UploadBase {
 			# scan failed (code was mapped to false by $exitCodeMap)
 			wfDebug( __METHOD__ . ": failed to scan $file (code $exitCode).\n" );
 
-			$output = $wgAntivirusRequired ? wfMessage( 'virus-scanfailed', array( $exitCode ) )->text() : null;
+			$output = $wgAntivirusRequired
+				? wfMessage( 'virus-scanfailed', [ $exitCode ] )->text()
+				: null;
 		} elseif ( $mappedCode === AV_SCAN_ABORTED ) {
 			# scan failed because filetype is unknown (probably imune)
 			wfDebug( __METHOD__ . ": unsupported file type $file (code $exitCode).\n" );
@@ -1560,9 +1722,9 @@ abstract class UploadBase {
 			$output = trim( $output );
 
 			if ( !$output ) {
-				$output = true; #if there's no output, return true
+				$output = true; # if there's no output, return true
 			} elseif ( $msgPattern ) {
-				$groups = array();
+				$groups = [];
 				if ( preg_match( $msgPattern, $output, $groups ) ) {
 					if ( $groups[1] ) {
 						$output = $groups[1];
@@ -1573,7 +1735,6 @@ abstract class UploadBase {
 			wfDebug( __METHOD__ . ": FOUND VIRUS! scanner feedback: $output \n" );
 		}
 
-		wfProfileOut( __METHOD__ );
 		return $output;
 	}
 
@@ -1581,16 +1742,17 @@ abstract class UploadBase {
 	 * Check if there's an overwrite conflict and, if so, if restrictions
 	 * forbid this user from performing the upload.
 	 *
-	 * @param $user User
+	 * @param User $user
 	 *
-	 * @return mixed true on success, array on failure
+	 * @return mixed True on success, array on failure
 	 */
 	private function checkOverwrite( $user ) {
 		// First check whether the local file can be overwritten
 		$file = $this->getLocalFile();
+		$file->load( File::READ_LATEST );
 		if ( $file->exists() ) {
 			if ( !self::userCanReUpload( $user, $file ) ) {
-				return array( 'fileexists-forbidden', $file->getName() );
+				return [ 'fileexists-forbidden', $file->getName() ];
 			} else {
 				return true;
 			}
@@ -1599,9 +1761,9 @@ abstract class UploadBase {
 		/* Check shared conflicts: if the local file does not exist, but
 		 * wfFindFile finds a file, it exists in a shared repository.
 		 */
-		$file = wfFindFile( $this->getTitle() );
+		$file = wfFindFile( $this->getTitle(), [ 'latest' => true ] );
 		if ( $file && !$user->isAllowed( 'reupload-shared' ) ) {
-			return array( 'fileexists-shared-forbidden', $file->getName() );
+			return [ 'fileexists-shared-forbidden', $file->getName() ];
 		}
 
 		return true;
@@ -1610,23 +1772,22 @@ abstract class UploadBase {
 	/**
 	 * Check if a user is the last uploader
 	 *
-	 * @param $user User object
-	 * @param string $img image name
-	 * @return Boolean
+	 * @param User $user
+	 * @param File $img
+	 * @return bool
 	 */
-	public static function userCanReUpload( User $user, $img ) {
+	public static function userCanReUpload( User $user, File $img ) {
 		if ( $user->isAllowed( 'reupload' ) ) {
 			return true; // non-conditional
-		}
-		if ( !$user->isAllowed( 'reupload-own' ) ) {
+		} elseif ( !$user->isAllowed( 'reupload-own' ) ) {
 			return false;
 		}
-		if ( is_string( $img ) ) {
-			$img = wfLocalFile( $img );
-		}
+
 		if ( !( $img instanceof LocalFile ) ) {
 			return false;
 		}
+
+		$img->load();
 
 		return $user->getId() == $img->getUser( 'id' );
 	}
@@ -1639,20 +1800,16 @@ abstract class UploadBase {
 	 * - File exists with normalized extension
 	 * - The file looks like a thumbnail and the original exists
 	 *
-	 * @param $file File The File object to check
+	 * @param File $file The File object to check
 	 * @return mixed False if the file does not exists, else an array
 	 */
 	public static function getExistsWarning( $file ) {
 		if ( $file->exists() ) {
-			return array( 'warning' => 'exists', 'file' => $file );
+			return [ 'warning' => 'exists', 'file' => $file ];
 		}
 
 		if ( $file->getTitle()->getArticleID() ) {
-			return array( 'warning' => 'page-exists', 'file' => $file );
-		}
-
-		if ( $file->wasDeleted() && !$file->exists() ) {
-			return array( 'warning' => 'was-deleted', 'file' => $file );
+			return [ 'warning' => 'page-exists', 'file' => $file ];
 		}
 
 		if ( strpos( $file->getName(), '.' ) == false ) {
@@ -1669,58 +1826,61 @@ abstract class UploadBase {
 			// We're not using the normalized form of the extension.
 			// Normal form is lowercase, using most common of alternate
 			// extensions (eg 'jpg' rather than 'JPEG').
-			//
+
 			// Check for another file using the normalized form...
 			$nt_lc = Title::makeTitle( NS_FILE, "{$partname}.{$normalizedExtension}" );
 			$file_lc = wfLocalFile( $nt_lc );
 
 			if ( $file_lc->exists() ) {
-				return array(
+				return [
 					'warning' => 'exists-normalized',
 					'file' => $file,
 					'normalizedFile' => $file_lc
-				);
+				];
 			}
 		}
 
 		// Check for files with the same name but a different extension
 		$similarFiles = RepoGroup::singleton()->getLocalRepo()->findFilesByPrefix(
-				"{$partname}.", 1 );
+			"{$partname}.", 1 );
 		if ( count( $similarFiles ) ) {
-			return array(
+			return [
 				'warning' => 'exists-normalized',
 				'file' => $file,
 				'normalizedFile' => $similarFiles[0],
-			);
+			];
 		}
 
 		if ( self::isThumbName( $file->getName() ) ) {
 			# Check for filenames like 50px- or 180px-, these are mostly thumbnails
-			$nt_thb = Title::newFromText( substr( $partname, strpos( $partname, '-' ) + 1 ) . '.' . $extension, NS_FILE );
+			$nt_thb = Title::newFromText(
+				substr( $partname, strpos( $partname, '-' ) + 1 ) . '.' . $extension,
+				NS_FILE
+			);
 			$file_thb = wfLocalFile( $nt_thb );
 			if ( $file_thb->exists() ) {
-				return array(
+				return [
 					'warning' => 'thumb',
 					'file' => $file,
 					'thumbFile' => $file_thb
-				);
+				];
 			} else {
 				// File does not exist, but we just don't like the name
-				return array(
+				return [
 					'warning' => 'thumb-name',
 					'file' => $file,
 					'thumbFile' => $file_thb
-				);
+				];
 			}
 		}
 
 		foreach ( self::getFilenamePrefixBlacklist() as $prefix ) {
 			if ( substr( $partname, 0, strlen( $prefix ) ) == $prefix ) {
-				return array(
+				return [
 					'warning' => 'bad-prefix',
 					'file' => $file,
 					'prefix' => $prefix
-				);
+				];
 			}
 		}
 
@@ -1729,26 +1889,27 @@ abstract class UploadBase {
 
 	/**
 	 * Helper function that checks whether the filename looks like a thumbnail
-	 * @param $filename string
+	 * @param string $filename
 	 * @return bool
 	 */
 	public static function isThumbName( $filename ) {
 		$n = strrpos( $filename, '.' );
 		$partname = $n ? substr( $filename, 0, $n ) : $filename;
+
 		return (
-					substr( $partname, 3, 3 ) == 'px-' ||
-					substr( $partname, 2, 3 ) == 'px-'
-				) &&
-				preg_match( "/[0-9]{2}/", substr( $partname, 0, 2 ) );
+			substr( $partname, 3, 3 ) == 'px-' ||
+			substr( $partname, 2, 3 ) == 'px-'
+		) &&
+		preg_match( "/[0-9]{2}/", substr( $partname, 0, 2 ) );
 	}
 
 	/**
 	 * Get a list of blacklisted filename prefixes from [[MediaWiki:Filename-prefix-blacklist]]
 	 *
-	 * @return array list of prefixes
+	 * @return array List of prefixes
 	 */
 	public static function getFilenamePrefixBlacklist() {
-		$blacklist = array();
+		$blacklist = [];
 		$message = wfMessage( 'filename-prefix-blacklist' )->inContentLanguage();
 		if ( !$message->isDisabled() ) {
 			$lines = explode( "\n", $message->plain() );
@@ -1766,23 +1927,28 @@ abstract class UploadBase {
 				$blacklist[] = trim( $line );
 			}
 		}
+
 		return $blacklist;
 	}
 
 	/**
 	 * Gets image info about the file just uploaded.
 	 *
-	 * Also has the effect of setting metadata to be an 'indexed tag name' in returned API result if
-	 * 'metadata' was requested. Oddly, we have to pass the "result" object down just so it can do that
-	 * with the appropriate format, presumably.
+	 * Also has the effect of setting metadata to be an 'indexed tag name' in
+	 * returned API result if 'metadata' was requested. Oddly, we have to pass
+	 * the "result" object down just so it can do that with the appropriate
+	 * format, presumably.
 	 *
-	 * @param $result ApiResult:
-	 * @return Array: image info
+	 * @param ApiResult $result
+	 * @return array Image info
 	 */
 	public function getImageInfo( $result ) {
 		$file = $this->getLocalFile();
-		// TODO This cries out for refactoring. We really want to say $file->getAllInfo(); here.
-		// Perhaps "info" methods should be moved into files, and the API should just wrap them in queries.
+		/** @todo This cries out for refactoring.
+		 *  We really want to say $file->getAllInfo(); here.
+		 * Perhaps "info" methods should be moved into files, and the API should
+		 * just wrap them in queries.
+		 */
 		if ( $file instanceof UploadStashFile ) {
 			$imParam = ApiQueryStashImageInfo::getPropertyNames();
 			$info = ApiQueryStashImageInfo::getInfo( $file, array_flip( $imParam ), $result );
@@ -1790,21 +1956,26 @@ abstract class UploadBase {
 			$imParam = ApiQueryImageInfo::getPropertyNames();
 			$info = ApiQueryImageInfo::getInfo( $file, array_flip( $imParam ), $result );
 		}
+
 		return $info;
 	}
 
 	/**
-	 * @param $error array
+	 * @param array $error
 	 * @return Status
 	 */
 	public function convertVerifyErrorToStatus( $error ) {
 		$code = $error['status'];
 		unset( $code['status'] );
+
 		return Status::newFatal( $this->getVerificationErrorCode( $code ), $error );
 	}
 
 	/**
-	 * @param $forType null|string
+	 * Get the MediaWiki maximum uploaded file size for given type of upload, based on
+	 * $wgMaxUploadSize.
+	 *
+	 * @param null|string $forType
 	 * @return int
 	 */
 	public static function getMaxUploadSize( $forType = null ) {
@@ -1822,29 +1993,57 @@ abstract class UploadBase {
 	}
 
 	/**
-	 * Get the current status of a chunked upload (used for polling).
-	 * The status will be read from the *current* user session.
-	 * @param $statusKey string
-	 * @return Array|bool
+	 * Get the PHP maximum uploaded file size, based on ini settings. If there is no limit or the
+	 * limit can't be guessed, returns a very large number (PHP_INT_MAX).
+	 *
+	 * @since 1.27
+	 * @return int
 	 */
-	public static function getSessionStatus( $statusKey ) {
-		return isset( $_SESSION[self::SESSION_STATUS_KEY][$statusKey] )
-			? $_SESSION[self::SESSION_STATUS_KEY][$statusKey]
-			: false;
+	public static function getMaxPhpUploadSize() {
+		$phpMaxFileSize = wfShorthandToInteger(
+			ini_get( 'upload_max_filesize' ) ?: ini_get( 'hhvm.server.upload.upload_max_file_size' ),
+			PHP_INT_MAX
+		);
+		$phpMaxPostSize = wfShorthandToInteger(
+			ini_get( 'post_max_size' ) ?: ini_get( 'hhvm.server.max_post_size' ),
+			PHP_INT_MAX
+		) ?: PHP_INT_MAX;
+		return min( $phpMaxFileSize, $phpMaxPostSize );
 	}
 
 	/**
-	 * Set the current status of a chunked upload (used for polling).
-	 * The status will be stored in the *current* user session.
-	 * @param $statusKey string
-	 * @param $value array|false
+	 * Get the current status of a chunked upload (used for polling)
+	 *
+	 * The value will be read from cache.
+	 *
+	 * @param User $user
+	 * @param string $statusKey
+	 * @return Status[]|bool
+	 */
+	public static function getSessionStatus( User $user, $statusKey ) {
+		$key = wfMemcKey( 'uploadstatus', $user->getId() ?: md5( $user->getName() ), $statusKey );
+
+		return ObjectCache::getMainStashInstance()->get( $key );
+	}
+
+	/**
+	 * Set the current status of a chunked upload (used for polling)
+	 *
+	 * The value will be set in cache for 1 day
+	 *
+	 * @param User $user
+	 * @param string $statusKey
+	 * @param array|bool $value
 	 * @return void
 	 */
-	public static function setSessionStatus( $statusKey, $value ) {
+	public static function setSessionStatus( User $user, $statusKey, $value ) {
+		$key = wfMemcKey( 'uploadstatus', $user->getId() ?: md5( $user->getName() ), $statusKey );
+
+		$cache = ObjectCache::getMainStashInstance();
 		if ( $value === false ) {
-			unset( $_SESSION[self::SESSION_STATUS_KEY][$statusKey] );
+			$cache->delete( $key );
 		} else {
-			$_SESSION[self::SESSION_STATUS_KEY][$statusKey] = $value;
+			$cache->set( $key, $value, $cache::TTL_DAY );
 		}
 	}
 }

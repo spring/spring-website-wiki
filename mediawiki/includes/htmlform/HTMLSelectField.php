@@ -27,8 +27,10 @@ class HTMLSelectField extends HTMLFormField {
 			$select->setAttribute( 'disabled', 'disabled' );
 		}
 
-		if ( isset( $this->mParams['tabindex'] ) ) {
-			$select->setAttribute( 'tabindex', $this->mParams['tabindex'] );
+		$allowedParams = [ 'tabindex', 'size' ];
+		$customParams = $this->getAttributes( $allowedParams );
+		foreach ( $customParams as $name => $value ) {
+			$select->setAttribute( $name, $value );
 		}
 
 		if ( $this->mClass !== '' ) {
@@ -38,5 +40,29 @@ class HTMLSelectField extends HTMLFormField {
 		$select->addOptions( $this->getOptions() );
 
 		return $select->getHTML();
+	}
+
+	function getInputOOUI( $value ) {
+		$disabled = false;
+		$allowedParams = [ 'tabindex' ];
+		$attribs = OOUI\Element::configFromHtmlAttributes(
+			$this->getAttributes( $allowedParams )
+		);
+
+		if ( $this->mClass !== '' ) {
+			$attribs['classes'] = [ $this->mClass ];
+		}
+
+		if ( !empty( $this->mParams['disabled'] ) ) {
+			$disabled = true;
+		}
+
+		return new OOUI\DropdownInputWidget( [
+			'name' => $this->mName,
+			'id' => $this->mID,
+			'options' => $this->getOptionsOOUI(),
+			'value' => strval( $value ),
+			'disabled' => $disabled,
+		] + $attribs );
 	}
 }

@@ -1,15 +1,14 @@
 <?php
 /** Tibetan (བོད་ཡིག)
  *
- * See MessagesQqq.php for message documentation incl. usage of parameters
- * To improve a translation please visit http://translatewiki.net
+ * To improve a translation please visit https://translatewiki.net
  *
  * @ingroup Language
  * @file
  *
  */
 
-$digitTransformTable = array(
+$digitTransformTable = [
 	'0' => '༠', # &#x0f20;
 	'1' => '༡', # &#x0f21;
 	'2' => '༢', # &#x0f22;
@@ -20,5 +19,5 @@ $digitTransformTable = array(
 	'7' => '༧', # &#x0f27;
 	'8' => '༨', # &#x0f28;
 	'9' => '༩', # &#x0f29;
-);
+];
 

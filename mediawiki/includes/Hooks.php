@@ -25,11 +25,6 @@
  */
 
 /**
- * @since 1.18
- */
-class MWHookException extends MWException {}
-
-/**
  * Hooks class.
  *
  * Used to supersede $wgHooks, because globals are EVIL.
@@ -37,24 +32,23 @@ class MWHookException extends MWException {}
  * @since 1.18
  */
 class Hooks {
-
 	/**
 	 * Array of events mapped to an array of callbacks to be run
 	 * when that event is triggered.
 	 */
-	protected static $handlers = array();
+	protected static $handlers = [];
 
 	/**
 	 * Attach an event handler to a given hook.
 	 *
 	 * @param string $name Name of hook
-	 * @param mixed $callback Callback function to attach
+	 * @param callable $callback Callback function to attach
 	 *
 	 * @since 1.18
 	 */
 	public static function register( $name, $callback ) {
 		if ( !isset( self::$handlers[$name] ) ) {
-			self::$handlers[$name] = array();
+			self::$handlers[$name] = [];
 		}
 
 		self::$handlers[$name][] = $callback;
@@ -64,10 +58,10 @@ class Hooks {
 	 * Clears hooks registered via Hooks::register(). Does not touch $wgHooks.
 	 * This is intended for use while testing and will fail if MW_PHPUNIT_TEST is not defined.
 	 *
-	 * @param string $name the name of the hook to clear.
+	 * @param string $name The name of the hook to clear.
 	 *
 	 * @since 1.21
-	 * @throws MWException if not in testing mode.
+	 * @throws MWException If not in testing mode.
 	 */
 	public static function clear( $name ) {
 		if ( !defined( 'MW_PHPUNIT_TEST' ) ) {
@@ -104,7 +98,7 @@ class Hooks {
 		global $wgHooks;
 
 		if ( !self::isRegistered( $name ) ) {
-			return array();
+			return [];
 		} elseif ( !isset( self::$handlers[$name] ) ) {
 			return $wgHooks[$name];
 		} elseif ( !isset( $wgHooks[$name] ) ) {
@@ -123,22 +117,22 @@ class Hooks {
 	 * Finally, process the return value and return/throw accordingly.
 	 *
 	 * @param string $event Event name
-	 * @param array $args  Array of parameters passed to hook functions
+	 * @param array $args Array of parameters passed to hook functions
 	 * @param string|null $deprecatedVersion Optionally, mark hook as deprecated with version number
 	 * @return bool True if no handler aborted the hook
 	 *
+	 * @throws Exception
+	 * @throws FatalError
+	 * @throws MWException
 	 * @since 1.22 A hook function is not required to return a value for
 	 *   processing to continue. Not returning a value (or explicitly
 	 *   returning null) is equivalent to returning true.
-	 * @throws MWException
-	 * @throws FatalError
 	 */
-	public static function run( $event, array $args = array(), $deprecatedVersion = null ) {
-		wfProfileIn( 'hook: ' . $event );
+	public static function run( $event, array $args = [], $deprecatedVersion = null ) {
 		foreach ( self::getHandlers( $event ) as $hook ) {
 			// Turn non-array values into an array. (Can't use casting because of objects.)
 			if ( !is_array( $hook ) ) {
-				$hook = array( $hook );
+				$hook = [ $hook ];
 			}
 
 			if ( !array_filter( $hook ) ) {
@@ -169,7 +163,7 @@ class Hooks {
 				}
 
 				$func = get_class( $object ) . '::' . $method;
-				$callback = array( $object, $method );
+				$callback = [ $object, $method ];
 			} elseif ( is_string( $hook[0] ) ) {
 				$func = $callback = array_shift( $hook );
 			} else {
@@ -179,7 +173,7 @@ class Hooks {
 			// Run autoloader (workaround for call_user_func_array bug)
 			// and throw error if not callable.
 			if ( !is_callable( $callback ) ) {
-				throw new MWException( 'Invalid callback in hooks for ' . $event . "\n" );
+				throw new MWException( 'Invalid callback ' . $func . ' in hooks for ' . $event . "\n" );
 			}
 
 			/*
@@ -193,29 +187,23 @@ class Hooks {
 			$badhookmsg = null;
 			$hook_args = array_merge( $hook, $args );
 
-			// Profile first in case the Profiler causes errors.
-			wfProfileIn( $func );
-
 			// mark hook as deprecated, if deprecation version is specified
 			if ( $deprecatedVersion !== null ) {
 				wfDeprecated( "$event hook (used in $func)", $deprecatedVersion );
 			}
 
 			$retval = call_user_func_array( $callback, $hook_args );
-			wfProfileOut( $func );
 
 			// Process the return value.
 			if ( is_string( $retval ) ) {
 				// String returned means error.
 				throw new FatalError( $retval );
 			} elseif ( $retval === false ) {
-				wfProfileOut( 'hook: ' . $event );
 				// False was returned. Stop processing, but no error.
 				return false;
 			}
 		}
 
-		wfProfileOut( 'hook: ' . $event );
 		return true;
 	}
 }

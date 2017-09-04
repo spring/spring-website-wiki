@@ -33,8 +33,8 @@ class LanguageKaa extends Language {
 	/**
 	 * Cases: genitive, dative, accusative, locative, ablative, comitative + possessive forms
 	 *
-	 * @param $word string
-	 * @param $case string
+	 * @param string $word
+	 * @param string $case
 	 *
 	 * @return string
 	 */
@@ -50,37 +50,35 @@ class LanguageKaa extends Language {
 	/**
 	 * It fixes issue with ucfirst for transforming 'i' to 'İ'
 	 *
-	 * @param $string string
+	 * @param string $string
 	 *
 	 * @return string
 	 */
 	function ucfirst( $string ) {
 		if ( substr( $string, 0, 1 ) === 'i' ) {
 			return 'İ' . substr( $string, 1 );
-		} else {
-			return parent::ucfirst( $string );
 		}
+		return parent::ucfirst( $string );
 	}
 
 	/**
 	 * It fixes issue with lcfirst for transforming 'I' to 'ı'
 	 *
-	 * @param $string string
+	 * @param string $string
 	 *
 	 * @return mixed|string
 	 */
 	function lcfirst( $string ) {
 		if ( substr( $string, 0, 1 ) === 'I' ) {
 			return 'ı' . substr( $string, 1 );
-		} else {
-			return parent::lcfirst( $string );
 		}
+		return parent::lcfirst( $string );
 	}
 
 	/**
 	 * Avoid grouping whole numbers between 0 to 9999
 	 *
-	 * @param $_ string
+	 * @param string $_
 	 *
 	 * @return string
 	 */

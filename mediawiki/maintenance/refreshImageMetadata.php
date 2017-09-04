@@ -44,18 +44,51 @@ class RefreshImageMetadata extends Maintenance {
 	function __construct() {
 		parent::__construct();
 
-		$this->mDescription = 'Script to update image metadata records';
+		$this->addDescription( 'Script to update image metadata records' );
 		$this->setBatchSize( 200 );
 
-		$this->addOption( 'force', 'Reload metadata from file even if the metadata looks ok', false, false, 'f' );
-		$this->addOption( 'broken-only', 'Only fix really broken records, leave old but still compatible records alone.' );
-		$this->addOption( 'verbose', 'Output extra information about each upgraded/non-upgraded file.', false, false, 'v' );
+		$this->addOption(
+			'force',
+			'Reload metadata from file even if the metadata looks ok',
+			false,
+			false,
+			'f'
+		);
+		$this->addOption(
+			'broken-only',
+			'Only fix really broken records, leave old but still compatible records alone.'
+		);
+		$this->addOption(
+			'verbose',
+			'Output extra information about each upgraded/non-upgraded file.',
+			false,
+			false,
+			'v'
+		);
 		$this->addOption( 'start', 'Name of file to start with', false, true );
 		$this->addOption( 'end', 'Name of file to end with', false, true );
 
-		$this->addOption( 'mime', '(Inefficient!) Only refresh files with this mime type. Can accept wild-card image/*', false, true );
-		$this->addOption( 'metadata-contains', '(Inefficient!) Only refresh files where the img_metadata field contains this string. Can be used if its known a specific property was being extracted incorrectly.', false, true );
-
+		$this->addOption(
+			'mediatype',
+			'Only refresh files with this media type, e.g. BITMAP, UNKNOWN etc.',
+			false,
+			true
+		);
+		$this->addOption(
+			'mime',
+			"Only refresh files with this MIME type. Can accept wild-card 'image/*'. "
+				. "Potentially inefficient unless 'mediatype' is also specified",
+			false,
+			true
+		);
+		$this->addOption(
+			'metadata-contains',
+			'(Inefficient!) Only refresh files where the img_metadata field '
+				. 'contains this string. Can be used if its known a specific '
+				. 'property was being extracted incorrectly.',
+			false,
+			true
+		);
 	}
 
 	public function execute() {
@@ -69,7 +102,7 @@ class RefreshImageMetadata extends Maintenance {
 		$leftAlone = 0;
 		$error = 0;
 
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = $this->getDB( DB_MASTER );
 		if ( $this->mBatchSize <= 0 ) {
 			$this->error( "Batch size is too low...", 12 );
 		}
@@ -78,15 +111,15 @@ class RefreshImageMetadata extends Maintenance {
 		$conds = $this->getConditions( $dbw );
 
 		// For the WHERE img_name > 'foo' condition that comes after doing a batch
-		$conds2 = array();
+		$conds2 = [];
 		if ( $start !== false ) {
 			$conds2[] = 'img_name >= ' . $dbw->addQuotes( $start );
 		}
 
-		$options = array(
+		$options = [
 			'LIMIT' => $this->mBatchSize,
 			'ORDER BY' => 'img_name ASC',
-		);
+		];
 
 		do {
 			$res = $dbw->select(
@@ -121,7 +154,7 @@ class RefreshImageMetadata extends Maintenance {
 						// to weed out any inconsequential changes.
 						$error++;
 						$this->output( "Warning: File:{$row->img_name} used to have " .
-						"$oldLength bytes of metadata but now has $newLength bytes.\n" );
+							"$oldLength bytes of metadata but now has $newLength bytes.\n" );
 					} elseif ( $verbose ) {
 						$this->output( "Refreshed File:{$row->img_name}.\n" );
 					}
@@ -134,42 +167,44 @@ class RefreshImageMetadata extends Maintenance {
 						if ( $newLength < $oldLength - 5 ) {
 							$error++;
 							$this->output( "Warning: File:{$row->img_name} used to have " .
-							"$oldLength bytes of metadata but now has $newLength bytes. (forced)\n" );
-
+								"$oldLength bytes of metadata but now has $newLength bytes. (forced)\n" );
 						}
 						if ( $verbose ) {
 							$this->output( "Forcibly refreshed File:{$row->img_name}.\n" );
 						}
-					}
-					else {
+					} else {
 						if ( $verbose ) {
 							$this->output( "Skipping File:{$row->img_name}.\n" );
 						}
 					}
 				}
-
 			}
-			$conds2 = array( 'img_name > ' . $dbw->addQuotes( $row->img_name ) );
+			$conds2 = [ 'img_name > ' . $dbw->addQuotes( $row->img_name ) ];
 			wfWaitForSlaves();
 		} while ( $res->numRows() === $this->mBatchSize );
 
 		$total = $upgraded + $leftAlone;
 		if ( $force ) {
-			$this->output( "\nFinished refreshing file metadata for $total files. $upgraded needed to be refreshed, $leftAlone did not need to be but were refreshed anyways, and $error refreshes were suspicious.\n" );
+			$this->output( "\nFinished refreshing file metadata for $total files. "
+				. "$upgraded needed to be refreshed, $leftAlone did not need to "
+				. "be but were refreshed anyways, and $error refreshes were suspicious.\n" );
 		} else {
-			$this->output( "\nFinished refreshing file metadata for $total files. $upgraded were refreshed, $leftAlone were already up to date, and $error refreshes were suspicious.\n" );
+			$this->output( "\nFinished refreshing file metadata for $total files. "
+				. "$upgraded were refreshed, $leftAlone were already up to date, "
+				. "and $error refreshes were suspicious.\n" );
 		}
 	}
 
 	/**
-	 * @param $dbw DatabaseBase
+	 * @param DatabaseBase $dbw
 	 * @return array
 	 */
 	function getConditions( $dbw ) {
-		$conds = array();
+		$conds = [];
 
 		$end = $this->getOption( 'end', false );
 		$mime = $this->getOption( 'mime', false );
+		$mediatype = $this->getOption( 'mediatype', false );
 		$like = $this->getOption( 'metadata-contains', false );
 
 		if ( $end !== false ) {
@@ -182,15 +217,19 @@ class RefreshImageMetadata extends Maintenance {
 				$conds['img_minor_mime'] = $minor;
 			}
 		}
+		if ( $mediatype !== false ) {
+			$conds['img_media_type'] = $mediatype;
+		}
 		if ( $like ) {
 			$conds[] = 'img_metadata ' . $dbw->buildLike( $dbw->anyString(), $like, $dbw->anyString() );
 		}
+
 		return $conds;
 	}
 
 	/**
-	 * @param $force bool
-	 * @param $brokenOnly bool
+	 * @param bool $force
+	 * @param bool $brokenOnly
 	 */
 	function setupParameters( $force, $brokenOnly ) {
 		global $wgUpdateCompatibleMetadata;

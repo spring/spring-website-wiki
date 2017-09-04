@@ -28,7 +28,7 @@
 class SearchSqlite extends SearchDatabase {
 	/**
 	 * Whether fulltext search is supported by current schema
-	 * @return Boolean
+	 * @return bool
 	 */
 	function fulltextSearchSupported() {
 		return $this->db->checkForEnabledSearch();
@@ -38,19 +38,23 @@ class SearchSqlite extends SearchDatabase {
 	 * Parse the user's query and transform it into an SQL fragment which will
 	 * become part of a WHERE clause
 	 *
+	 * @param string $filteredText
+	 * @param bool $fulltext
 	 * @return string
 	 */
 	function parseQuery( $filteredText, $fulltext ) {
 		global $wgContLang;
-		$lc = SearchEngine::legalSearchChars(); // Minus format chars
+		$lc = $this->legalSearchChars(); // Minus format chars
 		$searchon = '';
-		$this->searchTerms = array();
+		$this->searchTerms = [];
 
-		$m = array();
+		$m = [];
 		if ( preg_match_all( '/([-+<>~]?)(([' . $lc . ']+)(\*?)|"[^"]*")/',
 				$filteredText, $m, PREG_SET_ORDER ) ) {
 			foreach ( $m as $bits ) {
-				@list( /* all */, $modifier, $term, $nonQuoted, $wildcard ) = $bits;
+				MediaWiki\suppressWarnings();
+				list( /* all */, $modifier, $term, $nonQuoted, $wildcard ) = $bits;
+				MediaWiki\restoreWarnings();
 
 				if ( $nonQuoted != '' ) {
 					$term = $nonQuoted;
@@ -70,7 +74,7 @@ class SearchSqlite extends SearchDatabase {
 				if ( is_array( $convertedVariants ) ) {
 					$variants = array_unique( array_values( $convertedVariants ) );
 				} else {
-					$variants = array( $term );
+					$variants = [ $term ];
 				}
 
 				// The low-level search index does some processing on input to work
@@ -78,7 +82,7 @@ class SearchSqlite extends SearchDatabase {
 				// fulltext engine.
 				// For Chinese this also inserts spaces between adjacent Han characters.
 				$strippedVariants = array_map(
-					array( $wgContLang, 'normalizeForSearch' ),
+					[ $wgContLang, 'normalizeForSearch' ],
 					$variants );
 
 				// Some languages such as Chinese force all variants to a canonical
@@ -113,9 +117,9 @@ class SearchSqlite extends SearchDatabase {
 			wfDebug( __METHOD__ . ": Can't understand search query '{$filteredText}'\n" );
 		}
 
-		$searchon = $this->db->strencode( $searchon );
+		$searchon = $this->db->addQuotes( $searchon );
 		$field = $this->getIndexField( $fulltext );
-		return " $field MATCH '$searchon' ";
+		return " $field MATCH $searchon ";
 	}
 
 	function regexTerm( $string, $wildcard ) {
@@ -144,8 +148,8 @@ class SearchSqlite extends SearchDatabase {
 	/**
 	 * Perform a full text search query and return a result set.
 	 *
-	 * @param string $term raw search term
-	 * @return SqliteSearchResultSet
+	 * @param string $term Raw search term
+	 * @return SqlSearchResultSet
 	 */
 	function searchText( $term ) {
 		return $this->searchInternal( $term, true );
@@ -154,15 +158,15 @@ class SearchSqlite extends SearchDatabase {
 	/**
 	 * Perform a title-only search query and return a result set.
 	 *
-	 * @param string $term raw search term
-	 * @return SqliteSearchResultSet
+	 * @param string $term Raw search term
+	 * @return SqlSearchResultSet
 	 */
 	function searchTitle( $term ) {
 		return $this->searchInternal( $term, false );
 	}
 
 	protected function searchInternal( $term, $fulltext ) {
-		global $wgCountTotalSearchHits, $wgContLang;
+		global $wgContLang;
 
 		if ( !$this->fulltextSearchSupported() ) {
 			return null;
@@ -172,21 +176,19 @@ class SearchSqlite extends SearchDatabase {
 		$resultSet = $this->db->query( $this->getQuery( $filteredTerm, $fulltext ) );
 
 		$total = null;
-		if ( $wgCountTotalSearchHits ) {
-			$totalResult = $this->db->query( $this->getCountQuery( $filteredTerm, $fulltext ) );
-			$row = $totalResult->fetchObject();
-			if ( $row ) {
-				$total = intval( $row->c );
-			}
-			$totalResult->free();
+		$totalResult = $this->db->query( $this->getCountQuery( $filteredTerm, $fulltext ) );
+		$row = $totalResult->fetchObject();
+		if ( $row ) {
+			$total = intval( $row->c );
 		}
+		$totalResult->free();
 
-		return new SqliteSearchResultSet( $resultSet, $this->searchTerms, $total );
+		return new SqlSearchResultSet( $resultSet, $this->searchTerms, $total );
 	}
 
 	/**
 	 * Return a partial WHERE clause to limit the search to the given namespaces
-	 * @return String
+	 * @return string
 	 */
 	function queryNamespaces() {
 		if ( is_null( $this->namespaces ) ) {
@@ -202,8 +204,8 @@ class SearchSqlite extends SearchDatabase {
 
 	/**
 	 * Returns a query with limit for number of results set.
-	 * @param $sql String:
-	 * @return String
+	 * @param string $sql
+	 * @return string
 	 */
 	function limitResult( $sql ) {
 		return $this->db->limitResult( $sql, $this->limit, $this->offset );
@@ -212,9 +214,9 @@ class SearchSqlite extends SearchDatabase {
 	/**
 	 * Construct the full SQL query to do the search.
 	 * The guts shoulds be constructed in queryMain()
-	 * @param $filteredTerm String
-	 * @param $fulltext Boolean
-	 * @return String
+	 * @param string $filteredTerm
+	 * @param bool $fulltext
+	 * @return string
 	 */
 	function getQuery( $filteredTerm, $fulltext ) {
 		return $this->limitResult(
@@ -225,8 +227,8 @@ class SearchSqlite extends SearchDatabase {
 
 	/**
 	 * Picks which field to index on, depending on what type of query.
-	 * @param $fulltext Boolean
-	 * @return String
+	 * @param bool $fulltext
+	 * @return string
 	 */
 	function getIndexField( $fulltext ) {
 		return $fulltext ? 'si_text' : 'si_title';
@@ -235,9 +237,9 @@ class SearchSqlite extends SearchDatabase {
 	/**
 	 * Get the base part of the search query.
 	 *
-	 * @param $filteredTerm String
-	 * @param $fulltext Boolean
-	 * @return String
+	 * @param string $filteredTerm
+	 * @param bool $fulltext
+	 * @return string
 	 */
 	function queryMain( $filteredTerm, $fulltext ) {
 		$match = $this->parseQuery( $filteredTerm, $fulltext );
@@ -262,9 +264,9 @@ class SearchSqlite extends SearchDatabase {
 	 * Create or update the search index record for the given page.
 	 * Title and text should be pre-processed.
 	 *
-	 * @param $id Integer
-	 * @param $title String
-	 * @param $text String
+	 * @param int $id
+	 * @param string $title
+	 * @param string $text
 	 */
 	function update( $id, $title, $text ) {
 		if ( !$this->fulltextSearchSupported() ) {
@@ -274,22 +276,22 @@ class SearchSqlite extends SearchDatabase {
 		// couldn't do it so far due to typelessness of FTS3 tables.
 		$dbw = wfGetDB( DB_MASTER );
 
-		$dbw->delete( 'searchindex', array( 'rowid' => $id ), __METHOD__ );
+		$dbw->delete( 'searchindex', [ 'rowid' => $id ], __METHOD__ );
 
 		$dbw->insert( 'searchindex',
-			array(
+			[
 				'rowid' => $id,
 				'si_title' => $title,
 				'si_text' => $text
-			), __METHOD__ );
+			], __METHOD__ );
 	}
 
 	/**
 	 * Update a search index record's title only.
 	 * Title should be pre-processed.
 	 *
-	 * @param $id Integer
-	 * @param $title String
+	 * @param int $id
+	 * @param string $title
 	 */
 	function updateTitle( $id, $title ) {
 		if ( !$this->fulltextSearchSupported() ) {
@@ -298,22 +300,8 @@ class SearchSqlite extends SearchDatabase {
 		$dbw = wfGetDB( DB_MASTER );
 
 		$dbw->update( 'searchindex',
-			array( 'si_title' => $title ),
-			array( 'rowid' => $id ),
+			[ 'si_title' => $title ],
+			[ 'rowid' => $id ],
 			__METHOD__ );
-	}
-}
-
-/**
- * @ingroup Search
- */
-class SqliteSearchResultSet extends SqlSearchResultSet {
-	function __construct( $resultSet, $terms, $totalHits = null ) {
-		parent::__construct( $resultSet, $terms );
-		$this->mTotalHits = $totalHits;
-	}
-
-	function getTotalHits() {
-		return $this->mTotalHits;
 	}
 }

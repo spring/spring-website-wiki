@@ -1,8 +1,7 @@
 <?php
 /** Nepali (नेपाली)
  *
- * See MessagesQqq.php for message documentation incl. usage of parameters
- * To improve a translation please visit http://translatewiki.net
+ * To improve a translation please visit https://translatewiki.net
  *
  * @ingroup Language
  * @file
@@ -22,7 +21,7 @@
  * @author सरोज कुमार ढकाल
  */
 
-$namespaceNames = array(
+$namespaceNames = [
 	NS_MEDIA            => 'मीडिया',
 	NS_SPECIAL          => 'विशेष',
 	NS_TALK             => 'वार्तालाप',
@@ -39,9 +38,14 @@ $namespaceNames = array(
 	NS_HELP_TALK        => 'मद्दत_वार्ता',
 	NS_CATEGORY         => 'श्रेणी',
 	NS_CATEGORY_TALK    => 'श्रेणी_वार्ता',
-);
+];
 
-$digitTransformTable = array(
+$specialPageAliases = [
+	'Activeusers'               => [ 'सक्रिय_प्रयोगकर्ताहरु' ],
+	'Listgrouprights'           => [ 'प्रयोगकर्ता_समूह_अधिकार' ],
+];
+
+$digitTransformTable = [
 	'0' => '०', # &#x0966;
 	'1' => '१', # &#x0967;
 	'2' => '२', # &#x0968;
@@ -52,5 +56,5 @@ $digitTransformTable = array(
 	'7' => '७', # &#x096d;
 	'8' => '८', # &#x096e;
 	'9' => '९', # &#x096f;
-);
+];
 

@@ -32,7 +32,7 @@ class CloneDatabase {
 	private $oldTablePrefix = '';
 
 	/** @var array List of tables to be cloned */
-	private $tablesToClone = array();
+	private $tablesToClone = [];
 
 	/** @var bool Should we DROP tables containing the new names? */
 	private $dropCurrentTables = true;
@@ -71,7 +71,13 @@ class CloneDatabase {
 	 * Clone the table structure
 	 */
 	public function cloneTableStructure() {
+		global $wgSharedTables, $wgSharedDB;
 		foreach ( $this->tablesToClone as $tbl ) {
+			if ( $wgSharedDB && in_array( $tbl, $wgSharedTables, true ) ) {
+				// Shared tables don't work properly when cloning due to
+				// how prefixes are handled (bug 65654)
+				throw new MWException( "Cannot clone shared table $tbl." );
+			}
 			# Clean up from previous aborted run.  So that table escaping
 			# works correctly across DB engines, we need to change the pre-
 			# fix back and forth so tableName() works right.
@@ -83,11 +89,16 @@ class CloneDatabase {
 			$newTableName = $this->db->tableName( $tbl, 'raw' );
 
 			if ( $this->dropCurrentTables
-				&& !in_array( $this->db->getType(), array( 'postgres', 'oracle' ) )
+				&& !in_array( $this->db->getType(), [ 'postgres', 'oracle' ] )
 			) {
+				if ( $oldTableName === $newTableName ) {
+					// Last ditch check to avoid data loss
+					throw new MWException( "Not dropping new table, as '$newTableName'"
+						. " is name of both the old and the new table." );
+				}
 				$this->db->dropTable( $tbl, __METHOD__ );
 				wfDebug( __METHOD__ . " dropping {$newTableName}\n" );
-				//Dropping the oldTable because the prefix was changed
+				// Dropping the oldTable because the prefix was changed
 			}
 
 			# Create new table
@@ -118,7 +129,7 @@ class CloneDatabase {
 	 */
 	public static function changePrefix( $prefix ) {
 		global $wgDBprefix;
-		wfGetLBFactory()->forEachLB( array( 'CloneDatabase', 'changeLBPrefix' ), array( $prefix ) );
+		wfGetLBFactory()->forEachLB( [ 'CloneDatabase', 'changeLBPrefix' ], [ $prefix ] );
 		$wgDBprefix = $prefix;
 	}
 
@@ -128,7 +139,7 @@ class CloneDatabase {
 	 * @return void
 	 */
 	public static function changeLBPrefix( $lb, $prefix ) {
-		$lb->forEachOpenConnection( array( 'CloneDatabase', 'changeDBPrefix' ), array( $prefix ) );
+		$lb->forEachOpenConnection( [ 'CloneDatabase', 'changeDBPrefix' ], [ $prefix ] );
 	}
 
 	/**

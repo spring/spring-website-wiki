@@ -31,11 +31,16 @@ require_once __DIR__ . '/Maintenance.php';
  * @ingroup Maintenance
  */
 class PopulateLogSearch extends LoggedUpdateMaintenance {
-	static $tableMap = array( 'rev' => 'revision', 'fa' => 'filearchive', 'oi' => 'oldimage', 'ar' => 'archive' );
+	private static $tableMap = [
+		'rev' => 'revision',
+		'fa' => 'filearchive',
+		'oi' => 'oldimage',
+		'ar' => 'archive'
+	];
 
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Migrate log params to new table and index for searching";
+		$this->addDescription( 'Migrate log params to new table and index for searching' );
 		$this->setBatchSize( 100 );
 	}
 
@@ -51,11 +56,13 @@ class PopulateLogSearch extends LoggedUpdateMaintenance {
 		$db = $this->getDB( DB_MASTER );
 		if ( !$db->tableExists( 'log_search' ) ) {
 			$this->error( "log_search does not exist" );
+
 			return false;
 		}
 		$start = $db->selectField( 'logging', 'MIN(log_id)', false, __FUNCTION__ );
 		if ( !$start ) {
 			$this->output( "Nothing to do.\n" );
+
 			return true;
 		}
 		$end = $db->selectField( 'logging', 'MAX(log_id)', false, __FUNCTION__ );
@@ -65,7 +72,7 @@ class PopulateLogSearch extends LoggedUpdateMaintenance {
 		$blockStart = $start;
 		$blockEnd = $start + $this->mBatchSize - 1;
 
-		$delTypes = array( 'delete', 'suppress' ); // revisiondelete types
+		$delTypes = [ 'delete', 'suppress' ]; // revisiondelete types
 		while ( $blockEnd <= $end ) {
 			$this->output( "...doing log_id from $blockStart to $blockEnd\n" );
 			$cond = "log_id BETWEEN $blockStart AND $blockEnd";
@@ -89,8 +96,8 @@ class PopulateLogSearch extends LoggedUpdateMaintenance {
 						} else {
 							// Clean up the row...
 							$db->update( 'logging',
-								array( 'log_params' => implode( ',', $params ) ),
-								array( 'log_id' => $row->log_id ) );
+								[ 'log_params' => implode( ',', $params ) ],
+								[ 'log_id' => $row->log_id ] );
 						}
 					}
 					$items = explode( ',', $params[1] );
@@ -106,10 +113,10 @@ class PopulateLogSearch extends LoggedUpdateMaintenance {
 					$userField = $prefix . '_user';
 					$userTextField = $prefix . '_user_text';
 					// Add item author relations...
-					$userIds = $userIPs = array();
+					$userIds = $userIPs = [];
 					$sres = $db->select( $table,
-						array( $userField, $userTextField ),
-						array( $field => $items )
+						[ $userField, $userTextField ],
+						[ $field => $items ]
 					);
 					foreach ( $sres as $srow ) {
 						if ( $srow->$userField > 0 ) {
@@ -121,8 +128,8 @@ class PopulateLogSearch extends LoggedUpdateMaintenance {
 					// Add item author relations...
 					$log->addRelations( 'target_author_id', $userIds, $row->log_id );
 					$log->addRelations( 'target_author_ip', $userIPs, $row->log_id );
-				// RevisionDelete logs - log events
 				} elseif ( LogEventsList::typeAction( $row, $delTypes, 'event' ) ) {
+					// RevisionDelete logs - log events
 					$params = LogPage::extractParams( $row->log_params );
 					// Param format: <item CSV> [<ofield> <nfield>]
 					if ( count( $params ) < 1 ) {
@@ -133,10 +140,10 @@ class PopulateLogSearch extends LoggedUpdateMaintenance {
 					// Add item relations...
 					$log->addRelations( 'log_id', $items, $row->log_id );
 					// Add item author relations...
-					$userIds = $userIPs = array();
+					$userIds = $userIPs = [];
 					$sres = $db->select( 'logging',
-						array( 'log_user', 'log_user_text' ),
-						array( 'log_id' => $items )
+						[ 'log_user', 'log_user_text' ],
+						[ 'log_id' => $items ]
 					);
 					foreach ( $sres as $srow ) {
 						if ( $srow->log_user > 0 ) {
@@ -154,6 +161,7 @@ class PopulateLogSearch extends LoggedUpdateMaintenance {
 			wfWaitForSlaves();
 		}
 		$this->output( "Done populating log_search table.\n" );
+
 		return true;
 	}
 }

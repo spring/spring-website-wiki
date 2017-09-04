@@ -44,7 +44,7 @@ class FormOptions implements ArrayAccess {
 	/** Integer type, maps guessType() to WebRequest::getInt() */
 	const INT = 1;
 	/** Float type, maps guessType() to WebRequest::getFloat()
-	  * @since 1.23 */
+	 * @since 1.23 */
 	const FLOAT = 4;
 	/** Boolean type, maps guessType() to WebRequest::getBool() */
 	const BOOL = 2;
@@ -64,7 +64,7 @@ class FormOptions implements ArrayAccess {
 	 *   consumeValue() or consumeValues()
 	 * - 'type' - one of the type constants (but never AUTO)
 	 */
-	protected $options = array();
+	protected $options = [];
 
 	# Setting up
 
@@ -76,7 +76,7 @@ class FormOptions implements ArrayAccess {
 	 * @param int $type One of the type constants (optional, defaults to AUTO)
 	 */
 	public function add( $name, $default, $type = self::AUTO ) {
-		$option = array();
+		$option = [];
 		$option['default'] = $default;
 		$option['value'] = null;
 		$option['consumed'] = false;
@@ -228,7 +228,7 @@ class FormOptions implements ArrayAccess {
 	 * @return array Array of option values, or the default values if they are null
 	 */
 	public function consumeValues( $names ) {
-		$out = array();
+		$out = [];
 
 		foreach ( $names as $name ) {
 			$this->validateName( $name, true );
@@ -278,7 +278,7 @@ class FormOptions implements ArrayAccess {
 	 * @return array
 	 */
 	public function getUnconsumedValues( $all = false ) {
-		$values = array();
+		$values = [];
 
 		foreach ( $this->options as $name => $data ) {
 			if ( !$data['consumed'] ) {
@@ -296,7 +296,7 @@ class FormOptions implements ArrayAccess {
 	 * @return array
 	 */
 	public function getChangedValues() {
-		$values = array();
+		$values = [];
 
 		foreach ( $this->options as $name => $data ) {
 			if ( $data['value'] !== null ) {
@@ -312,7 +312,7 @@ class FormOptions implements ArrayAccess {
 	 * @return array
 	 */
 	public function getAllValues() {
-		$values = array();
+		$values = [];
 
 		foreach ( $this->options as $name => $data ) {
 			$values[$name] = $this->getValueReal( $data );
@@ -375,6 +375,7 @@ class FormOptions implements ArrayAccess {
 	/* @{ */
 	/**
 	 * Whether the option exists.
+	 * @param string $name
 	 * @return bool
 	 */
 	public function offsetExists( $name ) {
@@ -383,6 +384,7 @@ class FormOptions implements ArrayAccess {
 
 	/**
 	 * Retrieve an option value.
+	 * @param string $name
 	 * @return mixed
 	 */
 	public function offsetGet( $name ) {
@@ -391,6 +393,8 @@ class FormOptions implements ArrayAccess {
 
 	/**
 	 * Set an option to given value.
+	 * @param string $name
+	 * @param mixed $value
 	 */
 	public function offsetSet( $name, $value ) {
 		$this->setValue( $name, $value );
@@ -398,6 +402,7 @@ class FormOptions implements ArrayAccess {
 
 	/**
 	 * Delete the option.
+	 * @param string $name
 	 */
 	public function offsetUnset( $name ) {
 		$this->delete( $name );

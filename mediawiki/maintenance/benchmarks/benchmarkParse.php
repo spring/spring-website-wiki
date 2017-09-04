@@ -35,26 +35,29 @@ class BenchmarkParse extends Maintenance {
 	private $templateTimestamp = null;
 
 	/** @var array Cache that maps a Title DB key to revision ID for the requested timestamp */
-	private $idCache = array();
+	private $idCache = [];
 
 	function __construct() {
 		parent::__construct();
 		$this->addDescription( 'Benchmark parse operation' );
 		$this->addArg( 'title', 'The name of the page to parse' );
-		$this->addOption( 'cold', 'Don\'t repeat the parse operation to warm the cache' );
+		$this->addOption( 'warmup', 'Repeat the parse operation this number of times to warm the cache',
+			false, true );
+		$this->addOption( 'loops', 'Number of times to repeat parse operation post-warmup',
+			false, true );
 		$this->addOption( 'page-time',
 			'Use the version of the page which was current at the given time',
 			false, true );
 		$this->addOption( 'tpl-time',
 			'Use templates which were current at the given time (except that moves and ' .
-				'deletes are not handled properly)',
+			'deletes are not handled properly)',
 			false, true );
 	}
 
 	function execute() {
 		if ( $this->hasOption( 'tpl-time' ) ) {
 			$this->templateTimestamp = wfTimestamp( TS_MW, strtotime( $this->getOption( 'tpl-time' ) ) );
-			Hooks::register( 'BeforeParserFetchTemplateAndtitle', array( $this, 'onFetchTemplate' ) );
+			Hooks::register( 'BeforeParserFetchTemplateAndtitle', [ $this, 'onFetchTemplate' ] );
 		}
 
 		$title = Title::newFromText( $this->getArg() );
@@ -81,22 +84,30 @@ class BenchmarkParse extends Maintenance {
 			exit( 1 );
 		}
 
-		if ( !$this->hasOption( 'cold' ) ) {
+		$warmup = $this->getOption( 'warmup', 1 );
+		for ( $i = 0; $i < $warmup; $i++ ) {
 			$this->runParser( $revision );
 		}
 
+		$loops = $this->getOption( 'loops', 1 );
+		if ( $loops < 1 ) {
+			$this->error( 'Invalid number of loops specified', true );
+		}
 		$startUsage = getrusage();
 		$startTime = microtime( true );
-		$this->runParser( $revision );
+		for ( $i = 0; $i < $loops; $i++ ) {
+			$this->runParser( $revision );
+		}
 		$endUsage = getrusage();
 		$endTime = microtime( true );
 
 		printf( "CPU time = %.3f s, wall clock time = %.3f s\n",
 			// CPU time
-			$endUsage['ru_utime.tv_sec'] + $endUsage['ru_utime.tv_usec'] * 1e-6
-				- $startUsage['ru_utime.tv_sec'] - $startUsage['ru_utime.tv_usec'] * 1e-6,
+			( $endUsage['ru_utime.tv_sec'] + $endUsage['ru_utime.tv_usec'] * 1e-6
+			- $startUsage['ru_utime.tv_sec'] - $startUsage['ru_utime.tv_usec'] * 1e-6 ) / $loops,
 			// Wall clock time
-			$endTime - $startTime );
+			( $endTime - $startTime ) / $loops
+		);
 	}
 
 	/**
@@ -107,19 +118,19 @@ class BenchmarkParse extends Maintenance {
 	 * @return bool|string Revision ID, or false if not found or error
 	 */
 	function getRevIdForTime( Title $title, $timestamp ) {
-		$dbr = wfGetDB( DB_SLAVE );
+		$dbr = $this->getDB( DB_SLAVE );
 
 		$id = $dbr->selectField(
-			array( 'revision', 'page' ),
+			[ 'revision', 'page' ],
 			'rev_id',
-			array(
+			[
 				'page_namespace' => $title->getNamespace(),
 				'page_title' => $title->getDBkey(),
 				'rev_timestamp <= ' . $dbr->addQuotes( $timestamp )
-			),
+			],
 			__METHOD__,
-			array( 'ORDER BY' => 'rev_timestamp DESC', 'LIMIT' => 1 ),
-			array( 'revision' => array( 'INNER JOIN', 'rev_page=page_id' ) )
+			[ 'ORDER BY' => 'rev_timestamp DESC', 'LIMIT' => 1 ],
+			[ 'revision' => [ 'INNER JOIN', 'rev_page=page_id' ] ]
 		);
 
 		return $id;

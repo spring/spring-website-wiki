@@ -31,11 +31,17 @@ require_once __DIR__ . '/Maintenance.php';
 class PopulateImageSha1 extends LoggedUpdateMaintenance {
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Populate the img_sha1 field";
+		$this->addDescription( 'Populate the img_sha1 field' );
 		$this->addOption( 'force', "Recalculate sha1 for rows that already have a value" );
+		$this->addOption( 'multiversiononly', "Calculate only for files with several versions" );
 		$this->addOption( 'method', "Use 'pipe' to pipe to mysql command line,\n" .
 			"\t\tdefault uses Database class", false, true );
-		$this->addOption( 'file', 'Fix for a specific file, without File: namespace prefixed', false, true );
+		$this->addOption(
+			'file',
+			'Fix for a specific file, without File: namespace prefixed',
+			false,
+			true
+		);
 	}
 
 	protected function getUpdateKey() {
@@ -47,7 +53,7 @@ class PopulateImageSha1 extends LoggedUpdateMaintenance {
 	}
 
 	public function execute() {
-		if ( $this->getOption( 'file' ) ) {
+		if ( $this->getOption( 'file' ) || $this->hasOption( 'multiversiononly' ) ) {
 			$this->doDBUpdates(); // skip update log checks/saves
 		} else {
 			parent::execute();
@@ -61,28 +67,37 @@ class PopulateImageSha1 extends LoggedUpdateMaintenance {
 		$isRegen = ( $force || $file != '' ); // forced recalculation?
 
 		$t = -microtime( true );
-		$dbw = wfGetDB( DB_MASTER );
+		$dbw = $this->getDB( DB_MASTER );
 		if ( $file != '' ) {
 			$res = $dbw->select(
 				'image',
-				array( 'img_name' ),
-				array( 'img_name' => $file ),
+				[ 'img_name' ],
+				[ 'img_name' => $file ],
 				__METHOD__
 			);
 			if ( !$res ) {
 				$this->error( "No such file: $file", true );
+
 				return false;
 			}
 			$this->output( "Populating img_sha1 field for specified files\n" );
 		} else {
-			if ( $force ) {
-				$conds = array();
+			if ( $this->hasOption( 'multiversiononly' ) ) {
+				$conds = [];
+				$this->output( "Populating and recalculating img_sha1 field for versioned files\n" );
+			} elseif ( $force ) {
+				$conds = [];
 				$this->output( "Populating and recalculating img_sha1 field\n" );
 			} else {
-				$conds = array( 'img_sha1' => '' );
+				$conds = [ 'img_sha1' => '' ];
 				$this->output( "Populating img_sha1 field\n" );
 			}
-			$res = $dbw->select( 'image', array( 'img_name' ), $conds, __METHOD__ );
+			if ( $this->hasOption( 'multiversiononly' ) ) {
+				$res = $dbw->select( 'oldimage',
+					[ 'img_name' => 'DISTINCT(oi_name)' ], $conds, __METHOD__ );
+			} else {
+				$res = $dbw->select( 'image', [ 'img_name' ], $conds, __METHOD__ );
+			}
 		}
 
 		$imageTable = $dbw->tableName( 'image' );
@@ -109,10 +124,12 @@ class PopulateImageSha1 extends LoggedUpdateMaintenance {
 					"Done %d of %d, %5.3f%%  \r", $i, $numRows, $i / $numRows * 100 ) );
 				wfWaitForSlaves();
 			}
+
 			$file = wfLocalFile( $row->img_name );
 			if ( !$file ) {
 				continue;
 			}
+
 			// Upgrade the current file version...
 			$sha1 = $file->getRepo()->getFileSha1( $file->getPath() );
 			if ( strval( $sha1 ) !== '' ) { // file on disk and hashed properly

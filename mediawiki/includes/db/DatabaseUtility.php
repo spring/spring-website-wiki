@@ -22,29 +22,6 @@
  */
 
 /**
- * Utility class.
- * @ingroup Database
- */
-class DBObject {
-	public $mData;
-
-	function __construct( $data ) {
-		$this->mData = $data;
-	}
-
-	/**
-	 * @return bool
-	 */
-	function isLOB() {
-		return false;
-	}
-
-	function data() {
-		return $this->mData;
-	}
-}
-
-/**
  * Utility class
  * @ingroup Database
  *
@@ -107,7 +84,7 @@ class ResultWrapper implements Iterator {
 	/** @var int */
 	protected $pos = 0;
 
-	/** @var */
+	/** @var object|null */
 	protected $currentRow = null;
 
 	/**
@@ -136,11 +113,11 @@ class ResultWrapper implements Iterator {
 	}
 
 	/**
-	 * Fetch the next row from the given result object, in object form.
-	 * Fields can be retrieved with $row->fieldname, with fields acting like
-	 * member variables.
+	 * Fetch the next row from the given result object, in object form. Fields can be retrieved with
+	 * $row->fieldname, with fields acting like member variables. If no more rows are available,
+	 * false is returned.
 	 *
-	 * @return object
+	 * @return stdClass|bool
 	 * @throws DBUnexpectedError Thrown if the database returns an error
 	 */
 	function fetchObject() {
@@ -148,10 +125,10 @@ class ResultWrapper implements Iterator {
 	}
 
 	/**
-	 * Fetch the next row from the given result object, in associative array
-	 * form. Fields are retrieved with $row['fieldname'].
+	 * Fetch the next row from the given result object, in associative array form. Fields are
+	 * retrieved with $row['fieldname']. If no more rows are available, false is returned.
 	 *
-	 * @return array
+	 * @return array|bool
 	 * @throws DBUnexpectedError Thrown if the database returns an error
 	 */
 	function fetchRow() {
@@ -177,8 +154,8 @@ class ResultWrapper implements Iterator {
 		$this->db->dataSeek( $this, $row );
 	}
 
-	/*********************
-	 * Iterator functions
+	/*
+	 * ======= Iterator functions =======
 	 * Note that using these in combination with the non-iterator functions
 	 * above may cause rows to be skipped or repeated.
 	 */
@@ -192,7 +169,7 @@ class ResultWrapper implements Iterator {
 	}
 
 	/**
-	 * @return int
+	 * @return stdClass|array|bool
 	 */
 	function current() {
 		if ( is_null( $this->currentRow ) ) {
@@ -210,7 +187,7 @@ class ResultWrapper implements Iterator {
 	}
 
 	/**
-	 * @return int
+	 * @return stdClass
 	 */
 	function next() {
 		$this->pos++;
@@ -233,7 +210,7 @@ class ResultWrapper implements Iterator {
  */
 class FakeResultWrapper extends ResultWrapper {
 	/** @var array */
-	public $result = array();
+	public $result = [];
 
 	/** @var null And it's going to stay that way :D */
 	protected $db = null;
@@ -244,6 +221,9 @@ class FakeResultWrapper extends ResultWrapper {
 	/** @var array|stdClass|bool */
 	protected $currentRow = null;
 
+	/**
+	 * @param array $array
+	 */
 	function __construct( $array ) {
 		$this->result = $array;
 	}
@@ -255,6 +235,9 @@ class FakeResultWrapper extends ResultWrapper {
 		return count( $this->result );
 	}
 
+	/**
+	 * @return array|bool
+	 */
 	function fetchRow() {
 		if ( $this->pos < count( $this->result ) ) {
 			$this->currentRow = $this->result[$this->pos];
@@ -276,7 +259,10 @@ class FakeResultWrapper extends ResultWrapper {
 	function free() {
 	}
 
-	// Callers want to be able to access fields with $this->fieldName
+	/**
+	 * Callers want to be able to access fields with $this->fieldName
+	 * @return bool|stdClass
+	 */
 	function fetchObject() {
 		$this->fetchRow();
 		if ( $this->currentRow ) {
@@ -291,6 +277,9 @@ class FakeResultWrapper extends ResultWrapper {
 		$this->currentRow = null;
 	}
 
+	/**
+	 * @return bool|stdClass
+	 */
 	function next() {
 		return $this->fetchObject();
 	}
@@ -330,4 +319,29 @@ class LikeMatch {
  * The implementation details of this opaque type are up to the database subclass.
  */
 interface DBMasterPos {
+	/**
+	 * @return float UNIX timestamp
+	 * @since 1.25
+	 */
+	public function asOfTime();
+
+	/**
+	 * @param DBMasterPos $pos
+	 * @return bool Whether this position is at or higher than $pos
+	 * @since 1.27
+	 */
+	public function hasReached( DBMasterPos $pos );
+
+	/**
+	 * @param DBMasterPos $pos
+	 * @return bool Whether this position appears to be for the same channel as another
+	 * @since 1.27
+	 */
+	public function channelsMatch( DBMasterPos $pos );
+
+	/**
+	 * @return string
+	 * @since 1.27
+	 */
+	public function __toString();
 }

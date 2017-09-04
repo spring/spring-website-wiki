@@ -1,6 +1,6 @@
 <?php
 /**
- * Resource loader module for user customizations.
+ * ResourceLoader module for user customizations.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,56 +25,43 @@
  */
 class ResourceLoaderUserGroupsModule extends ResourceLoaderWikiModule {
 
-	/* Protected Members */
-
 	protected $origin = self::ORIGIN_USER_SITEWIDE;
-	protected $targets = array( 'desktop', 'mobile' );
-
-	/* Protected Methods */
+	protected $targets = [ 'desktop', 'mobile' ];
 
 	/**
-	 * @param $context ResourceLoaderContext
+	 * @param ResourceLoaderContext $context
 	 * @return array
 	 */
 	protected function getPages( ResourceLoaderContext $context ) {
-		global $wgUser, $wgUseSiteJs, $wgUseSiteCss;
-
-		$userName = $context->getUser();
-		if ( $userName === null ) {
-			return array();
-		}
-		if ( !$wgUseSiteJs && !$wgUseSiteCss ) {
-			return array();
+		$useSiteJs = $this->getConfig()->get( 'UseSiteJs' );
+		$useSiteCss = $this->getConfig()->get( 'UseSiteCss' );
+		if ( !$useSiteJs && !$useSiteCss ) {
+			return [];
 		}
 
-		// Use $wgUser is possible; allows to skip a lot of code
-		if ( is_object( $wgUser ) && $wgUser->getName() == $userName ) {
-			$user = $wgUser;
-		} else {
-			$user = User::newFromName( $userName );
-			if ( !$user instanceof User ) {
-				return array();
-			}
+		$user = $context->getUserObj();
+		if ( !$user || $user->isAnon() ) {
+			return [];
 		}
 
-		$pages = array();
+		$pages = [];
 		foreach ( $user->getEffectiveGroups() as $group ) {
 			if ( $group == '*' ) {
 				continue;
 			}
-			if ( $wgUseSiteJs ) {
-				$pages["MediaWiki:Group-$group.js"] = array( 'type' => 'script' );
+			if ( $useSiteJs ) {
+				$pages["MediaWiki:Group-$group.js"] = [ 'type' => 'script' ];
 			}
-			if ( $wgUseSiteCss ) {
-				$pages["MediaWiki:Group-$group.css"] = array( 'type' => 'style' );
+			if ( $useSiteCss ) {
+				$pages["MediaWiki:Group-$group.css"] = [ 'type' => 'style' ];
 			}
 		}
 		return $pages;
 	}
 
-	/* Methods */
-
 	/**
+	 * Get group name
+	 *
 	 * @return string
 	 */
 	public function getGroup() {

@@ -36,7 +36,7 @@
  * @since 1.19
  */
 abstract class FileBackendStore extends FileBackend {
-	/** @var BagOStuff */
+	/** @var WANObjectCache */
 	protected $memCache;
 	/** @var ProcessCacheLRU Map of paths to small (RAM/disk) cache items */
 	protected $cheapCache;
@@ -44,9 +44,9 @@ abstract class FileBackendStore extends FileBackend {
 	protected $expensiveCache;
 
 	/** @var array Map of container names to sharding config */
-	protected $shardViaHashLevels = array();
+	protected $shardViaHashLevels = [];
 
-	/** @var callback Method to get the MIME type of files */
+	/** @var callable Method to get the MIME type of files */
 	protected $mimeCallback;
 
 	protected $maxFileSize = 4294967296; // integer bytes (4GiB)
@@ -58,6 +58,7 @@ abstract class FileBackendStore extends FileBackend {
 	/**
 	 * @see FileBackend::__construct()
 	 * Additional $config params include:
+	 *   - wanCache     : WANObjectCache object to use for persistent caching.
 	 *   - mimeCallback : Callback that takes (storage path, content, file system path) and
 	 *                    returns the MIME type of the file or 'unknown/unknown'. The file
 	 *                    system path parameter should be used if the content one is null.
@@ -68,11 +69,8 @@ abstract class FileBackendStore extends FileBackend {
 		parent::__construct( $config );
 		$this->mimeCallback = isset( $config['mimeCallback'] )
 			? $config['mimeCallback']
-			: function ( $storagePath, $content, $fsPath ) {
-				// @TODO: handle the case of extension-less files using the contents
-				return StreamFile::contentTypeFromPath( $storagePath ) ?: 'unknown/unknown';
-			};
-		$this->memCache = new EmptyBagOStuff(); // disabled by default
+			: null;
+		$this->memCache = WANObjectCache::newEmpty(); // disabled by default
 		$this->cheapCache = new ProcessCacheLRU( self::CACHE_CHEAP_SIZE );
 		$this->expensiveCache = new ProcessCacheLRU( self::CACHE_EXPENSIVE_SIZE );
 	}
@@ -118,13 +116,13 @@ abstract class FileBackendStore extends FileBackend {
 	 * @return Status
 	 */
 	final public function createInternal( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		if ( strlen( $params['content'] ) > $this->maxFileSizeInternal() ) {
 			$status = Status::newFatal( 'backend-fail-maxsize',
 				$params['dst'], $this->maxFileSizeInternal() );
 		} else {
 			$status = $this->doCreateInternal( $params );
-			$this->clearCache( array( $params['dst'] ) );
+			$this->clearCache( [ $params['dst'] ] );
 			if ( !isset( $params['dstExists'] ) || $params['dstExists'] ) {
 				$this->deleteFileCache( $params['dst'] ); // persistent cache
 			}
@@ -159,13 +157,13 @@ abstract class FileBackendStore extends FileBackend {
 	 * @return Status
 	 */
 	final public function storeInternal( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		if ( filesize( $params['src'] ) > $this->maxFileSizeInternal() ) {
 			$status = Status::newFatal( 'backend-fail-maxsize',
 				$params['dst'], $this->maxFileSizeInternal() );
 		} else {
 			$status = $this->doStoreInternal( $params );
-			$this->clearCache( array( $params['dst'] ) );
+			$this->clearCache( [ $params['dst'] ] );
 			if ( !isset( $params['dstExists'] ) || $params['dstExists'] ) {
 				$this->deleteFileCache( $params['dst'] ); // persistent cache
 			}
@@ -201,9 +199,9 @@ abstract class FileBackendStore extends FileBackend {
 	 * @return Status
 	 */
 	final public function copyInternal( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$status = $this->doCopyInternal( $params );
-		$this->clearCache( array( $params['dst'] ) );
+		$this->clearCache( [ $params['dst'] ] );
 		if ( !isset( $params['dstExists'] ) || $params['dstExists'] ) {
 			$this->deleteFileCache( $params['dst'] ); // persistent cache
 		}
@@ -233,9 +231,9 @@ abstract class FileBackendStore extends FileBackend {
 	 * @return Status
 	 */
 	final public function deleteInternal( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$status = $this->doDeleteInternal( $params );
-		$this->clearCache( array( $params['src'] ) );
+		$this->clearCache( [ $params['src'] ] );
 		$this->deleteFileCache( $params['src'] ); // persistent cache
 		return $status;
 	}
@@ -267,9 +265,9 @@ abstract class FileBackendStore extends FileBackend {
 	 * @return Status
 	 */
 	final public function moveInternal( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$status = $this->doMoveInternal( $params );
-		$this->clearCache( array( $params['src'], $params['dst'] ) );
+		$this->clearCache( [ $params['src'], $params['dst'] ] );
 		$this->deleteFileCache( $params['src'] ); // persistent cache
 		if ( !isset( $params['dstExists'] ) || $params['dstExists'] ) {
 			$this->deleteFileCache( $params['dst'] ); // persistent cache
@@ -291,7 +289,7 @@ abstract class FileBackendStore extends FileBackend {
 		$status = $this->copyInternal( $params );
 		if ( $nsrc !== $ndst && $status->isOK() ) {
 			// Delete source (only fails due to races or network problems)
-			$status->merge( $this->deleteInternal( array( 'src' => $params['src'] ) ) );
+			$status->merge( $this->deleteInternal( [ 'src' => $params['src'] ] ) );
 			$status->setResult( true, $status->value ); // ignore delete() errors
 		}
 
@@ -313,10 +311,10 @@ abstract class FileBackendStore extends FileBackend {
 	 * @return Status
 	 */
 	final public function describeInternal( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		if ( count( $params['headers'] ) ) {
 			$status = $this->doDescribeInternal( $params );
-			$this->clearCache( array( $params['src'] ) );
+			$this->clearCache( [ $params['src'] ] );
 			$this->deleteFileCache( $params['src'] ); // persistent cache
 		} else {
 			$status = Status::newGood(); // nothing to do
@@ -346,7 +344,7 @@ abstract class FileBackendStore extends FileBackend {
 	}
 
 	final public function concatenate( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$status = Status::newGood();
 
 		// Try to lock the source files for the scope of this function
@@ -357,8 +355,8 @@ abstract class FileBackendStore extends FileBackend {
 			$status->merge( $this->doConcatenate( $params ) );
 			$sec = microtime( true ) - $start_time;
 			if ( !$status->isOK() ) {
-				wfDebugLog( 'FileOperation', get_class( $this ) . " failed to concatenate " .
-					count( $params['srcs'] ) . " file(s) [$sec sec]" );
+				wfDebugLog( 'FileOperation', get_class( $this ) . "-{$this->name}" .
+					" failed to concatenate " . count( $params['srcs'] ) . " file(s) [$sec sec]" );
 			}
 		}
 
@@ -376,9 +374,9 @@ abstract class FileBackendStore extends FileBackend {
 		unset( $params['latest'] ); // sanity
 
 		// Check that the specified temp file is valid...
-		wfSuppressWarnings();
+		MediaWiki\suppressWarnings();
 		$ok = ( is_file( $tmpPath ) && filesize( $tmpPath ) == 0 );
-		wfRestoreWarnings();
+		MediaWiki\restoreWarnings();
 		if ( !$ok ) { // not present or not empty
 			$status->fatal( 'backend-fail-opentemp', $tmpPath );
 
@@ -389,7 +387,7 @@ abstract class FileBackendStore extends FileBackend {
 		$fsFiles = $this->getLocalReferenceMulti( $params );
 		foreach ( $fsFiles as $path => &$fsFile ) {
 			if ( !$fsFile ) { // chunk failed to download?
-				$fsFile = $this->getLocalReference( array( 'src' => $path ) );
+				$fsFile = $this->getLocalReference( [ 'src' => $path ] );
 				if ( !$fsFile ) { // retry failed?
 					$status->fatal( 'backend-fail-read', $path );
 
@@ -439,7 +437,7 @@ abstract class FileBackendStore extends FileBackend {
 	}
 
 	final protected function doPrepare( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$status = Status::newGood();
 
 		list( $fullCont, $dir, $shard ) = $this->resolveStoragePath( $params['dir'] );
@@ -464,7 +462,7 @@ abstract class FileBackendStore extends FileBackend {
 
 	/**
 	 * @see FileBackendStore::doPrepare()
-	 * @param $container
+	 * @param string $container
 	 * @param string $dir
 	 * @param array $params
 	 * @return Status
@@ -474,7 +472,7 @@ abstract class FileBackendStore extends FileBackend {
 	}
 
 	final protected function doSecure( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$status = Status::newGood();
 
 		list( $fullCont, $dir, $shard ) = $this->resolveStoragePath( $params['dir'] );
@@ -499,7 +497,7 @@ abstract class FileBackendStore extends FileBackend {
 
 	/**
 	 * @see FileBackendStore::doSecure()
-	 * @param $container
+	 * @param string $container
 	 * @param string $dir
 	 * @param array $params
 	 * @return Status
@@ -509,7 +507,7 @@ abstract class FileBackendStore extends FileBackend {
 	}
 
 	final protected function doPublish( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$status = Status::newGood();
 
 		list( $fullCont, $dir, $shard ) = $this->resolveStoragePath( $params['dir'] );
@@ -534,7 +532,7 @@ abstract class FileBackendStore extends FileBackend {
 
 	/**
 	 * @see FileBackendStore::doPublish()
-	 * @param $container
+	 * @param string $container
 	 * @param string $dir
 	 * @param array $params
 	 * @return Status
@@ -544,16 +542,16 @@ abstract class FileBackendStore extends FileBackend {
 	}
 
 	final protected function doClean( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$status = Status::newGood();
 
 		// Recursive: first delete all empty subdirs recursively
 		if ( !empty( $params['recursive'] ) && !$this->directoriesAreVirtual() ) {
-			$subDirsRel = $this->getTopDirectoryList( array( 'dir' => $params['dir'] ) );
+			$subDirsRel = $this->getTopDirectoryList( [ 'dir' => $params['dir'] ] );
 			if ( $subDirsRel !== null ) { // no errors
 				foreach ( $subDirsRel as $subDirRel ) {
 					$subDir = $params['dir'] . "/{$subDirRel}"; // full path
-					$status->merge( $this->doClean( array( 'dir' => $subDir ) + $params ) );
+					$status->merge( $this->doClean( [ 'dir' => $subDir ] + $params ) );
 				}
 				unset( $subDirsRel ); // free directory for rmdir() on Windows (for FS backends)
 			}
@@ -567,7 +565,7 @@ abstract class FileBackendStore extends FileBackend {
 		}
 
 		// Attempt to lock this directory...
-		$filesLockEx = array( $params['dir'] );
+		$filesLockEx = [ $params['dir'] ];
 		$scopedLockE = $this->getScopedFileLocks( $filesLockEx, LockManager::LOCK_EX, $status );
 		if ( !$status->isOK() ) {
 			return $status; // abort
@@ -590,7 +588,7 @@ abstract class FileBackendStore extends FileBackend {
 
 	/**
 	 * @see FileBackendStore::doClean()
-	 * @param $container
+	 * @param string $container
 	 * @param string $dir
 	 * @param array $params
 	 * @return Status
@@ -600,21 +598,21 @@ abstract class FileBackendStore extends FileBackend {
 	}
 
 	final public function fileExists( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$stat = $this->getFileStat( $params );
 
 		return ( $stat === null ) ? null : (bool)$stat; // null => failure
 	}
 
 	final public function getFileTimestamp( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$stat = $this->getFileStat( $params );
 
 		return $stat ? $stat['mtime'] : false;
 	}
 
 	final public function getFileSize( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$stat = $this->getFileStat( $params );
 
 		return $stat ? $stat['size'] : false;
@@ -625,10 +623,10 @@ abstract class FileBackendStore extends FileBackend {
 		if ( $path === null ) {
 			return false; // invalid storage path
 		}
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$latest = !empty( $params['latest'] ); // use latest data?
-		if ( !$this->cheapCache->has( $path, 'stat', self::CACHE_TTL ) ) {
-			$this->primeFileCache( array( $path ) ); // check persistent cache
+		if ( !$latest && !$this->cheapCache->has( $path, 'stat', self::CACHE_TTL ) ) {
+			$this->primeFileCache( [ $path ] ); // check persistent cache
 		}
 		if ( $this->cheapCache->has( $path, 'stat', self::CACHE_TTL ) ) {
 			$stat = $this->cheapCache->get( $path, 'stat' );
@@ -638,15 +636,13 @@ abstract class FileBackendStore extends FileBackend {
 				if ( !$latest || $stat['latest'] ) {
 					return $stat;
 				}
-			} elseif ( in_array( $stat, array( 'NOT_EXIST', 'NOT_EXIST_LATEST' ) ) ) {
+			} elseif ( in_array( $stat, [ 'NOT_EXIST', 'NOT_EXIST_LATEST' ] ) ) {
 				if ( !$latest || $stat === 'NOT_EXIST_LATEST' ) {
 					return false;
 				}
 			}
 		}
-		wfProfileIn( __METHOD__ . '-miss-' . $this->name );
 		$stat = $this->doGetFileStat( $params );
-		wfProfileOut( __METHOD__ . '-miss-' . $this->name );
 		if ( is_array( $stat ) ) { // file exists
 			// Strongly consistent backends can automatically set "latest"
 			$stat['latest'] = isset( $stat['latest'] ) ? $stat['latest'] : $latest;
@@ -654,17 +650,17 @@ abstract class FileBackendStore extends FileBackend {
 			$this->setFileCache( $path, $stat ); // update persistent cache
 			if ( isset( $stat['sha1'] ) ) { // some backends store SHA-1 as metadata
 				$this->cheapCache->set( $path, 'sha1',
-					array( 'hash' => $stat['sha1'], 'latest' => $latest ) );
+					[ 'hash' => $stat['sha1'], 'latest' => $latest ] );
 			}
 			if ( isset( $stat['xattr'] ) ) { // some backends store headers/metadata
 				$stat['xattr'] = self::normalizeXAttributes( $stat['xattr'] );
 				$this->cheapCache->set( $path, 'xattr',
-					array( 'map' => $stat['xattr'], 'latest' => $latest ) );
+					[ 'map' => $stat['xattr'], 'latest' => $latest ] );
 			}
 		} elseif ( $stat === false ) { // file does not exist
 			$this->cheapCache->set( $path, 'stat', $latest ? 'NOT_EXIST_LATEST' : 'NOT_EXIST' );
-			$this->cheapCache->set( $path, 'xattr', array( 'map' => false, 'latest' => $latest ) );
-			$this->cheapCache->set( $path, 'sha1', array( 'hash' => false, 'latest' => $latest ) );
+			$this->cheapCache->set( $path, 'xattr', [ 'map' => false, 'latest' => $latest ] );
+			$this->cheapCache->set( $path, 'sha1', [ 'hash' => false, 'latest' => $latest ] );
 			wfDebug( __METHOD__ . ": File $path does not exist.\n" );
 		} else { // an error occurred
 			wfDebug( __METHOD__ . ": Could not stat file $path.\n" );
@@ -679,7 +675,7 @@ abstract class FileBackendStore extends FileBackend {
 	abstract protected function doGetFileStat( array $params );
 
 	public function getFileContentsMulti( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 
 		$params = $this->setConcurrencyFlags( $params );
 		$contents = $this->doGetFileContentsMulti( $params );
@@ -693,11 +689,11 @@ abstract class FileBackendStore extends FileBackend {
 	 * @return array
 	 */
 	protected function doGetFileContentsMulti( array $params ) {
-		$contents = array();
+		$contents = [];
 		foreach ( $this->doGetLocalReferenceMulti( $params ) as $path => $fsFile ) {
-			wfSuppressWarnings();
+			MediaWiki\suppressWarnings();
 			$contents[$path] = $fsFile ? file_get_contents( $fsFile->getPath() ) : false;
-			wfRestoreWarnings();
+			MediaWiki\restoreWarnings();
 		}
 
 		return $contents;
@@ -708,7 +704,7 @@ abstract class FileBackendStore extends FileBackend {
 		if ( $path === null ) {
 			return false; // invalid storage path
 		}
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$latest = !empty( $params['latest'] ); // use latest data?
 		if ( $this->cheapCache->has( $path, 'xattr', self::CACHE_TTL ) ) {
 			$stat = $this->cheapCache->get( $path, 'xattr' );
@@ -718,13 +714,9 @@ abstract class FileBackendStore extends FileBackend {
 				return $stat['map'];
 			}
 		}
-		wfProfileIn( __METHOD__ . '-miss' );
-		wfProfileIn( __METHOD__ . '-miss-' . $this->name );
 		$fields = $this->doGetFileXAttributes( $params );
 		$fields = is_array( $fields ) ? self::normalizeXAttributes( $fields ) : false;
-		wfProfileOut( __METHOD__ . '-miss-' . $this->name );
-		wfProfileOut( __METHOD__ . '-miss' );
-		$this->cheapCache->set( $path, 'xattr', array( 'map' => $fields, 'latest' => $latest ) );
+		$this->cheapCache->set( $path, 'xattr', [ 'map' => $fields, 'latest' => $latest ] );
 
 		return $fields;
 	}
@@ -734,7 +726,7 @@ abstract class FileBackendStore extends FileBackend {
 	 * @return bool|string
 	 */
 	protected function doGetFileXAttributes( array $params ) {
-		return array( 'headers' => array(), 'metadata' => array() ); // not supported
+		return [ 'headers' => [], 'metadata' => [] ]; // not supported
 	}
 
 	final public function getFileSha1Base36( array $params ) {
@@ -742,7 +734,7 @@ abstract class FileBackendStore extends FileBackend {
 		if ( $path === null ) {
 			return false; // invalid storage path
 		}
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$latest = !empty( $params['latest'] ); // use latest data?
 		if ( $this->cheapCache->has( $path, 'sha1', self::CACHE_TTL ) ) {
 			$stat = $this->cheapCache->get( $path, 'sha1' );
@@ -752,10 +744,8 @@ abstract class FileBackendStore extends FileBackend {
 				return $stat['hash'];
 			}
 		}
-		wfProfileIn( __METHOD__ . '-miss-' . $this->name );
 		$hash = $this->doGetFileSha1Base36( $params );
-		wfProfileOut( __METHOD__ . '-miss-' . $this->name );
-		$this->cheapCache->set( $path, 'sha1', array( 'hash' => $hash, 'latest' => $latest ) );
+		$this->cheapCache->set( $path, 'sha1', [ 'hash' => $hash, 'latest' => $latest ] );
 
 		return $hash;
 	}
@@ -775,7 +765,7 @@ abstract class FileBackendStore extends FileBackend {
 	}
 
 	final public function getFileProps( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$fsFile = $this->getLocalReference( $params );
 		$props = $fsFile ? $fsFile->getProps() : FSFile::placeholderProps();
 
@@ -783,11 +773,11 @@ abstract class FileBackendStore extends FileBackend {
 	}
 
 	final public function getLocalReferenceMulti( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 
 		$params = $this->setConcurrencyFlags( $params );
 
-		$fsFiles = array(); // (path => FSFile)
+		$fsFiles = []; // (path => FSFile)
 		$latest = !empty( $params['latest'] ); // use latest data?
 		// Reuse any files already in process cache...
 		foreach ( $params['srcs'] as $src ) {
@@ -809,7 +799,7 @@ abstract class FileBackendStore extends FileBackend {
 			$fsFiles[$path] = $fsFile;
 			if ( $fsFile ) { // update the process cache...
 				$this->expensiveCache->set( $path, 'localRef',
-					array( 'object' => $fsFile, 'latest' => $latest ) );
+					[ 'object' => $fsFile, 'latest' => $latest ] );
 			}
 		}
 
@@ -826,7 +816,7 @@ abstract class FileBackendStore extends FileBackend {
 	}
 
 	final public function getLocalCopyMulti( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 
 		$params = $this->setConcurrencyFlags( $params );
 		$tmpFiles = $this->doGetLocalCopyMulti( $params );
@@ -851,7 +841,7 @@ abstract class FileBackendStore extends FileBackend {
 	}
 
 	final public function streamFile( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$status = Status::newGood();
 
 		$info = $this->getFileStat( $params );
@@ -860,19 +850,17 @@ abstract class FileBackendStore extends FileBackend {
 		}
 
 		// Set output buffer and HTTP headers for stream
-		$extraHeaders = isset( $params['headers'] ) ? $params['headers'] : array();
+		$extraHeaders = isset( $params['headers'] ) ? $params['headers'] : [];
 		$res = StreamFile::prepareForStream( $params['src'], $info, $extraHeaders );
 		if ( $res == StreamFile::NOT_MODIFIED ) {
 			// do nothing; client cache is up to date
 		} elseif ( $res == StreamFile::READY_STREAM ) {
-			wfProfileIn( __METHOD__ . '-send-' . $this->name );
 			$status = $this->doStreamFile( $params );
-			wfProfileOut( __METHOD__ . '-send-' . $this->name );
 			if ( !$status->isOK() ) {
 				// Per bug 41113, nasty things can happen if bad cache entries get
 				// stuck in cache. It's also possible that this error can come up
 				// with simple race conditions. Clear out the stat cache to be safe.
-				$this->clearCache( array( $params['src'] ) );
+				$this->clearCache( [ $params['src'] ] );
 				$this->deleteFileCache( $params['src'] );
 				trigger_error( "Bad stat cache or race condition for file {$params['src']}." );
 			}
@@ -962,7 +950,7 @@ abstract class FileBackendStore extends FileBackend {
 	 * @param string $container Resolved container name
 	 * @param string $dir Resolved path relative to container
 	 * @param array $params
-	 * @return Traversable|Array|null Returns null on failure
+	 * @return Traversable|array|null Returns null on failure
 	 */
 	abstract public function getDirectoryListInternal( $container, $dir, array $params );
 
@@ -992,7 +980,7 @@ abstract class FileBackendStore extends FileBackend {
 	 * @param string $container Resolved container name
 	 * @param string $dir Resolved path relative to container
 	 * @param array $params
-	 * @return Traversable|Array|null Returns null on failure
+	 * @return Traversable|array|null Returns null on failure
 	 */
 	abstract public function getFileListInternal( $container, $dir, array $params );
 
@@ -1008,7 +996,7 @@ abstract class FileBackendStore extends FileBackend {
 	 * @throws FileBackendError
 	 */
 	final public function getOperationsInternal( array $ops ) {
-		$supportedOps = array(
+		$supportedOps = [
 			'store' => 'StoreFileOp',
 			'copy' => 'CopyFileOp',
 			'move' => 'MoveFileOp',
@@ -1016,9 +1004,9 @@ abstract class FileBackendStore extends FileBackend {
 			'create' => 'CreateFileOp',
 			'describe' => 'DescribeFileOp',
 			'null' => 'NullFileOp'
-		);
+		];
 
-		$performOps = array(); // array of FileOp objects
+		$performOps = []; // array of FileOp objects
 		// Build up ordered array of FileOps...
 		foreach ( $ops as $operation ) {
 			$opName = $operation['op'];
@@ -1048,7 +1036,7 @@ abstract class FileBackendStore extends FileBackend {
 	 */
 	final public function getPathsToLockForOpsInternal( array $performOps ) {
 		// Build up a list of files to lock...
-		$paths = array( 'sh' => array(), 'ex' => array() );
+		$paths = [ 'sh' => [], 'ex' => [] ];
 		foreach ( $performOps as $fileOp ) {
 			$paths['sh'] = array_merge( $paths['sh'], $fileOp->storagePathsRead() );
 			$paths['ex'] = array_merge( $paths['ex'], $fileOp->storagePathsChanged() );
@@ -1058,24 +1046,24 @@ abstract class FileBackendStore extends FileBackend {
 		// Get a shared lock on the parent directory of each path changed
 		$paths['sh'] = array_merge( $paths['sh'], array_map( 'dirname', $paths['ex'] ) );
 
-		return array(
+		return [
 			LockManager::LOCK_UW => $paths['sh'],
 			LockManager::LOCK_EX => $paths['ex']
-		);
+		];
 	}
 
 	public function getScopedLocksForOps( array $ops, Status $status ) {
 		$paths = $this->getPathsToLockForOpsInternal( $this->getOperationsInternal( $ops ) );
 
-		return array( $this->getScopedFileLocks( $paths, 'mixed', $status ) );
+		return $this->getScopedFileLocks( $paths, 'mixed', $status );
 	}
 
 	final protected function doOperationsInternal( array $ops, array $opts ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$status = Status::newGood();
 
 		// Fix up custom header name/value pairs...
-		$ops = array_map( array( $this, 'stripInvalidHeadersFromOp' ), $ops );
+		$ops = array_map( [ $this, 'sanitizeOpHeaders' ], $ops );
 
 		// Build up a list of FileOps...
 		$performOps = $this->getOperationsInternal( $ops );
@@ -1085,6 +1073,7 @@ abstract class FileBackendStore extends FileBackend {
 			// Build up a list of files to lock...
 			$paths = $this->getPathsToLockForOpsInternal( $performOps );
 			// Try to lock those files for the scope of this function...
+
 			$scopeLock = $this->getScopedFileLocks( $paths, 'mixed', $status );
 			if ( !$status->isOK() ) {
 				return $status; // abort
@@ -1097,56 +1086,74 @@ abstract class FileBackendStore extends FileBackend {
 		}
 
 		// Build the list of paths involved
-		$paths = array();
+		$paths = [];
 		foreach ( $performOps as $op ) {
 			$paths = array_merge( $paths, $op->storagePathsRead() );
 			$paths = array_merge( $paths, $op->storagePathsChanged() );
 		}
+
+		// Enlarge the cache to fit the stat entries of these files
+		$this->cheapCache->resize( max( 2 * count( $paths ), self::CACHE_CHEAP_SIZE ) );
+
 		// Load from the persistent container caches
 		$this->primeContainerCache( $paths );
 		// Get the latest stat info for all the files (having locked them)
-		$this->preloadFileStat( array( 'srcs' => $paths, 'latest' => true ) );
+		$ok = $this->preloadFileStat( [ 'srcs' => $paths, 'latest' => true ] );
 
-		// Actually attempt the operation batch...
-		$opts = $this->setConcurrencyFlags( $opts );
-		$subStatus = FileOpBatch::attempt( $performOps, $opts, $this->fileJournal );
+		if ( $ok ) {
+			// Actually attempt the operation batch...
+			$opts = $this->setConcurrencyFlags( $opts );
+			$subStatus = FileOpBatch::attempt( $performOps, $opts, $this->fileJournal );
+		} else {
+			// If we could not even stat some files, then bail out...
+			$subStatus = Status::newFatal( 'backend-fail-internal', $this->name );
+			foreach ( $ops as $i => $op ) { // mark each op as failed
+				$subStatus->success[$i] = false;
+				++$subStatus->failCount;
+			}
+			wfDebugLog( 'FileOperation', get_class( $this ) . "-{$this->name} " .
+				" stat failure; aborted operations: " . FormatJson::encode( $ops ) );
+		}
 
 		// Merge errors into status fields
 		$status->merge( $subStatus );
 		$status->success = $subStatus->success; // not done in merge()
 
+		// Shrink the stat cache back to normal size
+		$this->cheapCache->resize( self::CACHE_CHEAP_SIZE );
+
 		return $status;
 	}
 
 	final protected function doQuickOperationsInternal( array $ops ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 		$status = Status::newGood();
 
 		// Fix up custom header name/value pairs...
-		$ops = array_map( array( $this, 'stripInvalidHeadersFromOp' ), $ops );
+		$ops = array_map( [ $this, 'sanitizeOpHeaders' ], $ops );
 
 		// Clear any file cache entries
 		$this->clearCache();
 
-		$supportedOps = array( 'create', 'store', 'copy', 'move', 'delete', 'describe', 'null' );
+		$supportedOps = [ 'create', 'store', 'copy', 'move', 'delete', 'describe', 'null' ];
 		// Parallel ops may be disabled in config due to dependencies (e.g. needing popen())
 		$async = ( $this->parallelize === 'implicit' && count( $ops ) > 1 );
 		$maxConcurrency = $this->concurrency; // throttle
 
-		$statuses = array(); // array of (index => Status)
-		$fileOpHandles = array(); // list of (index => handle) arrays
-		$curFileOpHandles = array(); // current handle batch
+		$statuses = []; // array of (index => Status)
+		$fileOpHandles = []; // list of (index => handle) arrays
+		$curFileOpHandles = []; // current handle batch
 		// Perform the sync-only ops and build up op handles for the async ops...
 		foreach ( $ops as $index => $params ) {
 			if ( !in_array( $params['op'], $supportedOps ) ) {
 				throw new FileBackendError( "Operation '{$params['op']}' is not supported." );
 			}
 			$method = $params['op'] . 'Internal'; // e.g. "storeInternal"
-			$subStatus = $this->$method( array( 'async' => $async ) + $params );
+			$subStatus = $this->$method( [ 'async' => $async ] + $params );
 			if ( $subStatus->value instanceof FileBackendStoreOpHandle ) { // async
 				if ( count( $curFileOpHandles ) >= $maxConcurrency ) {
 					$fileOpHandles[] = $curFileOpHandles; // push this batch
-					$curFileOpHandles = array();
+					$curFileOpHandles = [];
 				}
 				$curFileOpHandles[$index] = $subStatus->value; // keep index
 			} else { // error or completed
@@ -1180,13 +1187,13 @@ abstract class FileBackendStore extends FileBackend {
 	 * The resulting Status object fields will correspond
 	 * to the order in which the handles where given.
 	 *
-	 * @param array $fileOpHandles
+	 * @param FileBackendStoreOpHandle[] $fileOpHandles
+	 *
 	 * @throws FileBackendError
-	 * @internal param array $handles List of FileBackendStoreOpHandle objects
 	 * @return array Map of Status objects
 	 */
 	final public function executeOpHandlesInternal( array $fileOpHandles ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 
 		foreach ( $fileOpHandles as $fileOpHandle ) {
 			if ( !( $fileOpHandle instanceof FileBackendStoreOpHandle ) ) {
@@ -1205,20 +1212,24 @@ abstract class FileBackendStore extends FileBackend {
 
 	/**
 	 * @see FileBackendStore::executeOpHandlesInternal()
-	 * @param array $fileOpHandles
+	 *
+	 * @param FileBackendStoreOpHandle[] $fileOpHandles
+	 *
 	 * @throws FileBackendError
-	 * @return array List of corresponding Status objects
+	 * @return Status[] List of corresponding Status objects
 	 */
 	protected function doExecuteOpHandlesInternal( array $fileOpHandles ) {
 		if ( count( $fileOpHandles ) ) {
 			throw new FileBackendError( "This backend supports no asynchronous operations." );
 		}
 
-		return array();
+		return [];
 	}
 
 	/**
-	 * Strip long HTTP headers from a file operation.
+	 * Normalize and filter HTTP headers from a file operation
+	 *
+	 * This normalizes and strips long HTTP headers from a file operation.
 	 * Most headers are just numbers, but some are allowed to be long.
 	 * This function is useful for cleaning up headers and avoiding backend
 	 * specific errors, especially in the middle of batch file operations.
@@ -1226,25 +1237,28 @@ abstract class FileBackendStore extends FileBackend {
 	 * @param array $op Same format as doOperation()
 	 * @return array
 	 */
-	protected function stripInvalidHeadersFromOp( array $op ) {
-		static $longs = array( 'Content-Disposition' );
+	protected function sanitizeOpHeaders( array $op ) {
+		static $longs = [ 'content-disposition' ];
+
 		if ( isset( $op['headers'] ) ) { // op sets HTTP headers
+			$newHeaders = [];
 			foreach ( $op['headers'] as $name => $value ) {
+				$name = strtolower( $name );
 				$maxHVLen = in_array( $name, $longs ) ? INF : 255;
 				if ( strlen( $name ) > 255 || strlen( $value ) > $maxHVLen ) {
 					trigger_error( "Header '$name: $value' is too long." );
-					unset( $op['headers'][$name] );
-				} elseif ( !strlen( $value ) ) {
-					$op['headers'][$name] = ''; // null/false => ""
+				} else {
+					$newHeaders[$name] = strlen( $value ) ? $value : ''; // null/false => ""
 				}
 			}
+			$op['headers'] = $newHeaders;
 		}
 
 		return $op;
 	}
 
 	final public function preloadCache( array $paths ) {
-		$fullConts = array(); // full container names
+		$fullConts = []; // full container names
 		foreach ( $paths as $path ) {
 			list( $fullCont, , ) = $this->resolveStoragePath( $path );
 			$fullConts[] = $fullCont;
@@ -1282,12 +1296,13 @@ abstract class FileBackendStore extends FileBackend {
 	}
 
 	final public function preloadFileStat( array $params ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
+		$success = true; // no network errors
 
 		$params['concurrency'] = ( $this->parallelize !== 'off' ) ? $this->concurrency : 1;
 		$stats = $this->doGetFileStatMulti( $params );
 		if ( $stats === null ) {
-			return; // not supported
+			return true; // not supported
 		}
 
 		$latest = !empty( $params['latest'] ); // use latest data?
@@ -1303,25 +1318,28 @@ abstract class FileBackendStore extends FileBackend {
 				$this->setFileCache( $path, $stat ); // update persistent cache
 				if ( isset( $stat['sha1'] ) ) { // some backends store SHA-1 as metadata
 					$this->cheapCache->set( $path, 'sha1',
-						array( 'hash' => $stat['sha1'], 'latest' => $latest ) );
+						[ 'hash' => $stat['sha1'], 'latest' => $latest ] );
 				}
 				if ( isset( $stat['xattr'] ) ) { // some backends store headers/metadata
 					$stat['xattr'] = self::normalizeXAttributes( $stat['xattr'] );
 					$this->cheapCache->set( $path, 'xattr',
-						array( 'map' => $stat['xattr'], 'latest' => $latest ) );
+						[ 'map' => $stat['xattr'], 'latest' => $latest ] );
 				}
 			} elseif ( $stat === false ) { // file does not exist
 				$this->cheapCache->set( $path, 'stat',
 					$latest ? 'NOT_EXIST_LATEST' : 'NOT_EXIST' );
 				$this->cheapCache->set( $path, 'xattr',
-					array( 'map' => false, 'latest' => $latest ) );
+					[ 'map' => false, 'latest' => $latest ] );
 				$this->cheapCache->set( $path, 'sha1',
-					array( 'hash' => false, 'latest' => $latest ) );
+					[ 'hash' => false, 'latest' => $latest ] );
 				wfDebug( __METHOD__ . ": File $path does not exist.\n" );
 			} else { // an error occurred
+				$success = false;
 				wfDebug( __METHOD__ . ": Could not stat file $path.\n" );
 			}
 		}
+
+		return $success;
 	}
 
 	/**
@@ -1349,19 +1367,38 @@ abstract class FileBackendStore extends FileBackend {
 	abstract protected function directoriesAreVirtual();
 
 	/**
-	 * Check if a container name is valid.
-	 * This checks for for length and illegal characters.
+	 * Check if a short container name is valid
+	 *
+	 * This checks for length and illegal characters.
+	 * This may disallow certain characters that can appear
+	 * in the prefix used to make the full container name.
+	 *
+	 * @param string $container
+	 * @return bool
+	 */
+	final protected static function isValidShortContainerName( $container ) {
+		// Suffixes like '.xxx' (hex shard chars) or '.seg' (file segments)
+		// might be used by subclasses. Reserve the dot character for sanity.
+		// The only way dots end up in containers (e.g. resolveStoragePath)
+		// is due to the wikiId container prefix or the above suffixes.
+		return self::isValidContainerName( $container ) && !preg_match( '/[.]/', $container );
+	}
+
+	/**
+	 * Check if a full container name is valid
+	 *
+	 * This checks for length and illegal characters.
+	 * Limiting the characters makes migrations to other stores easier.
 	 *
 	 * @param string $container
 	 * @return bool
 	 */
 	final protected static function isValidContainerName( $container ) {
-		// This accounts for Swift and S3 restrictions while leaving room
-		// for things like '.xxx' (hex shard chars) or '.seg' (segments).
-		// This disallows directory separators or traversal characters.
+		// This accounts for NTFS, Swift, and Ceph restrictions
+		// and disallows directory separators or traversal characters.
 		// Note that matching strings URL encode to the same string;
-		// in Swift, the length restriction is *after* URL encoding.
-		return preg_match( '/^[a-z0-9][a-z0-9-_]{0,199}$/i', $container );
+		// in Swift/Ceph, the length restriction is *after* URL encoding.
+		return (bool)preg_match( '/^[a-z0-9][a-z0-9-_.]{0,199}$/i', $container );
 	}
 
 	/**
@@ -1378,29 +1415,29 @@ abstract class FileBackendStore extends FileBackend {
 	 * @return array (container, path, container suffix) or (null, null, null) if invalid
 	 */
 	final protected function resolveStoragePath( $storagePath ) {
-		list( $backend, $container, $relPath ) = self::splitStoragePath( $storagePath );
+		list( $backend, $shortCont, $relPath ) = self::splitStoragePath( $storagePath );
 		if ( $backend === $this->name ) { // must be for this backend
 			$relPath = self::normalizeContainerPath( $relPath );
-			if ( $relPath !== null ) {
+			if ( $relPath !== null && self::isValidShortContainerName( $shortCont ) ) {
 				// Get shard for the normalized path if this container is sharded
-				$cShard = $this->getContainerShard( $container, $relPath );
+				$cShard = $this->getContainerShard( $shortCont, $relPath );
 				// Validate and sanitize the relative path (backend-specific)
-				$relPath = $this->resolveContainerPath( $container, $relPath );
+				$relPath = $this->resolveContainerPath( $shortCont, $relPath );
 				if ( $relPath !== null ) {
 					// Prepend any wiki ID prefix to the container name
-					$container = $this->fullContainerName( $container );
+					$container = $this->fullContainerName( $shortCont );
 					if ( self::isValidContainerName( $container ) ) {
 						// Validate and sanitize the container name (backend-specific)
 						$container = $this->resolveContainerName( "{$container}{$cShard}" );
 						if ( $container !== null ) {
-							return array( $container, $relPath, $cShard );
+							return [ $container, $relPath, $cShard ];
 						}
 					}
 				}
 			}
 		}
 
-		return array( null, null, null );
+		return [ null, null, null ];
 	}
 
 	/**
@@ -1421,10 +1458,10 @@ abstract class FileBackendStore extends FileBackend {
 	final protected function resolveStoragePathReal( $storagePath ) {
 		list( $container, $relPath, $cShard ) = $this->resolveStoragePath( $storagePath );
 		if ( $cShard !== null && substr( $relPath, -1 ) !== '/' ) {
-			return array( $container, $relPath );
+			return [ $container, $relPath ];
 		}
 
-		return array( null, null );
+		return [ null, null ];
 	}
 
 	/**
@@ -1454,7 +1491,7 @@ abstract class FileBackendStore extends FileBackend {
 			// Allow certain directories to be above the hash dirs so as
 			// to work with FileRepo (e.g. "archive/a/ab" or "temp/a/ab").
 			// They must be 2+ chars to avoid any hash directory ambiguity.
-			$m = array();
+			$m = [];
 			if ( preg_match( "!^(?:[^/]{2,}/)*$hashDirRegex(?:/|$)!", $relPath, $m ) ) {
 				return '.' . implode( '', array_slice( $m, 1 ) );
 			}
@@ -1494,12 +1531,12 @@ abstract class FileBackendStore extends FileBackend {
 			if ( $hashLevels == 1 || $hashLevels == 2 ) {
 				$hashBase = (int)$config['base'];
 				if ( $hashBase == 16 || $hashBase == 36 ) {
-					return array( $hashLevels, $hashBase, $config['repeat'] );
+					return [ $hashLevels, $hashBase, $config['repeat'] ];
 				}
 			}
 		}
 
-		return array( 0, 0, false ); // no sharding
+		return [ 0, 0, false ]; // no sharding
 	}
 
 	/**
@@ -1509,12 +1546,12 @@ abstract class FileBackendStore extends FileBackend {
 	 * @return array
 	 */
 	final protected function getContainerSuffixes( $container ) {
-		$shards = array();
+		$shards = [];
 		list( $digits, $base ) = $this->getContainerHashLevels( $container );
 		if ( $digits > 0 ) {
 			$numShards = pow( $base, $digits );
 			for ( $index = 0; $index < $numShards; $index++ ) {
-				$shards[] = '.' . wfBaseConvert( $index, 10, $base, $digits );
+				$shards[] = '.' . Wikimedia\base_convert( $index, 10, $base, $digits );
 			}
 		}
 
@@ -1578,7 +1615,7 @@ abstract class FileBackendStore extends FileBackend {
 	 * @param array $val Information to cache
 	 */
 	final protected function setContainerCache( $container, array $val ) {
-		$this->memCache->add( $this->containerCacheKey( $container ), $val, 14 * 86400 );
+		$this->memCache->set( $this->containerCacheKey( $container ), $val, 14 * 86400 );
 	}
 
 	/**
@@ -1588,7 +1625,7 @@ abstract class FileBackendStore extends FileBackend {
 	 * @param string $container Resolved container name
 	 */
 	final protected function deleteContainerCache( $container ) {
-		if ( !$this->memCache->set( $this->containerCacheKey( $container ), 'PURGED', 300 ) ) {
+		if ( !$this->memCache->delete( $this->containerCacheKey( $container ), 300 ) ) {
 			trigger_error( "Unable to delete stat cache for container $container." );
 		}
 	}
@@ -1601,10 +1638,10 @@ abstract class FileBackendStore extends FileBackend {
 	 * @param array $items
 	 */
 	final protected function primeContainerCache( array $items ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 
-		$paths = array(); // list of storage paths
-		$contNames = array(); // (cache key => resolved container name)
+		$paths = []; // list of storage paths
+		$contNames = []; // (cache key => resolved container name)
 		// Get all the paths/containers from the items...
 		foreach ( $items as $item ) {
 			if ( self::isStoragePath( $item ) ) {
@@ -1621,7 +1658,7 @@ abstract class FileBackendStore extends FileBackend {
 			}
 		}
 
-		$contInfo = array(); // (resolved container name => cache value)
+		$contInfo = []; // (resolved container name => cache value)
 		// Get all cache entries for these container cache keys...
 		$values = $this->memCache->getMulti( array_keys( $contNames ) );
 		foreach ( $values as $cacheKey => $val ) {
@@ -1668,21 +1705,8 @@ abstract class FileBackendStore extends FileBackend {
 		$age = time() - wfTimestamp( TS_UNIX, $val['mtime'] );
 		$ttl = min( 7 * 86400, max( 300, floor( .1 * $age ) ) );
 		$key = $this->fileCacheKey( $path );
-		// Set the cache unless it is currently salted with the value "PURGED".
-		// Using add() handles this except it also is a no-op in that case where
-		// the current value is not "latest" but $val is, so use CAS in that case.
-		if ( !$this->memCache->add( $key, $val, $ttl ) && !empty( $val['latest'] ) ) {
-			$this->memCache->merge(
-				$key,
-				function( BagOStuff $cache, $key, $cValue ) use ( $val ) {
-					return ( is_array( $cValue ) && empty( $cValue['latest'] ) )
-						? $val // update the stat cache with the lastest info
-						: false; // do nothing (cache is salted or some error happened)
-				},
-				$ttl,
-				1
-			);
-		}
+		// Set the cache unless it is currently salted.
+		$this->memCache->set( $key, $val, $ttl );
 	}
 
 	/**
@@ -1698,7 +1722,7 @@ abstract class FileBackendStore extends FileBackend {
 		if ( $path === null ) {
 			return; // invalid storage path
 		}
-		if ( !$this->memCache->set( $this->fileCacheKey( $path ), 'PURGED', 300 ) ) {
+		if ( !$this->memCache->delete( $this->fileCacheKey( $path ), 300 ) ) {
 			trigger_error( "Unable to delete stat cache for file $path." );
 		}
 	}
@@ -1711,10 +1735,10 @@ abstract class FileBackendStore extends FileBackend {
 	 * @param array $items List of storage paths
 	 */
 	final protected function primeFileCache( array $items ) {
-		$section = new ProfileSection( __METHOD__ . "-{$this->name}" );
+		$ps = Profiler::instance()->scopedProfileIn( __METHOD__ . "-{$this->name}" );
 
-		$paths = array(); // list of storage paths
-		$pathNames = array(); // (cache key => storage path)
+		$paths = []; // list of storage paths
+		$pathNames = []; // (cache key => storage path)
 		// Get all the paths/containers from the items...
 		foreach ( $items as $item ) {
 			if ( self::isStoragePath( $item ) ) {
@@ -1730,20 +1754,21 @@ abstract class FileBackendStore extends FileBackend {
 				$pathNames[$this->fileCacheKey( $path )] = $path;
 			}
 		}
-		// Get all cache entries for these container cache keys...
+		// Get all cache entries for these file cache keys...
 		$values = $this->memCache->getMulti( array_keys( $pathNames ) );
 		foreach ( $values as $cacheKey => $val ) {
+			$path = $pathNames[$cacheKey];
 			if ( is_array( $val ) ) {
-				$path = $pathNames[$cacheKey];
+				$val['latest'] = false; // never completely trust cache
 				$this->cheapCache->set( $path, 'stat', $val );
 				if ( isset( $val['sha1'] ) ) { // some backends store SHA-1 as metadata
 					$this->cheapCache->set( $path, 'sha1',
-						array( 'hash' => $val['sha1'], 'latest' => $val['latest'] ) );
+						[ 'hash' => $val['sha1'], 'latest' => false ] );
 				}
 				if ( isset( $val['xattr'] ) ) { // some backends store headers/metadata
 					$val['xattr'] = self::normalizeXAttributes( $val['xattr'] );
 					$this->cheapCache->set( $path, 'xattr',
-						array( 'map' => $val['xattr'], 'latest' => $val['latest'] ) );
+						[ 'map' => $val['xattr'], 'latest' => false ] );
 				}
 			}
 		}
@@ -1757,7 +1782,7 @@ abstract class FileBackendStore extends FileBackend {
 	 * @since 1.22
 	 */
 	final protected static function normalizeXAttributes( array $xattr ) {
-		$newXAttr = array( 'headers' => array(), 'metadata' => array() );
+		$newXAttr = [ 'headers' => [], 'metadata' => [] ];
 
 		foreach ( $xattr['headers'] as $name => $value ) {
 			$newXAttr['headers'][strtolower( $name )] = $value;
@@ -1797,10 +1822,21 @@ abstract class FileBackendStore extends FileBackend {
 	 * @param string $storagePath
 	 * @param string|null $content File data
 	 * @param string|null $fsPath File system path
-	 * @return MIME type
+	 * @return string MIME type
 	 */
 	protected function getContentType( $storagePath, $content, $fsPath ) {
-		return call_user_func_array( $this->mimeCallback, func_get_args() );
+		if ( $this->mimeCallback ) {
+			return call_user_func_array( $this->mimeCallback, func_get_args() );
+		}
+
+		$mime = null;
+		if ( $fsPath !== null && function_exists( 'finfo_file' ) ) {
+			$finfo = finfo_open( FILEINFO_MIME_TYPE );
+			$mime = finfo_file( $finfo, $fsPath );
+			finfo_close( $finfo );
+		}
+
+		return is_string( $mime ) ? $mime : 'unknown/unknown';
 	}
 }
 
@@ -1814,11 +1850,11 @@ abstract class FileBackendStore extends FileBackend {
  */
 abstract class FileBackendStoreOpHandle {
 	/** @var array */
-	public $params = array(); // params to caller functions
+	public $params = []; // params to caller functions
 	/** @var FileBackendStore */
 	public $backend;
 	/** @var array */
-	public $resourcesToClose = array();
+	public $resourcesToClose = [];
 
 	public $call; // string; name that identifies the function called
 
@@ -1850,7 +1886,7 @@ abstract class FileBackendStoreShardListIterator extends FilterIterator {
 	protected $directory;
 
 	/** @var array */
-	protected $multiShardPaths = array(); // (rel path => 1)
+	protected $multiShardPaths = []; // (rel path => 1)
 
 	/**
 	 * @param FileBackendStore $backend
@@ -1892,7 +1928,7 @@ abstract class FileBackendStoreShardListIterator extends FilterIterator {
 
 	public function rewind() {
 		parent::rewind();
-		$this->multiShardPaths = array();
+		$this->multiShardPaths = [];
 	}
 
 	/**
@@ -1912,7 +1948,7 @@ class FileBackendStoreShardDirIterator extends FileBackendStoreShardListIterator
 		$list = $this->backend->getDirectoryListInternal(
 			$container, $this->directory, $this->params );
 		if ( $list === null ) {
-			return new ArrayIterator( array() );
+			return new ArrayIterator( [] );
 		} else {
 			return is_array( $list ) ? new ArrayIterator( $list ) : $list;
 		}
@@ -1927,7 +1963,7 @@ class FileBackendStoreShardFileIterator extends FileBackendStoreShardListIterato
 		$list = $this->backend->getFileListInternal(
 			$container, $this->directory, $this->params );
 		if ( $list === null ) {
-			return new ArrayIterator( array() );
+			return new ArrayIterator( [] );
 		} else {
 			return is_array( $list ) ? new ArrayIterator( $list ) : $list;
 		}

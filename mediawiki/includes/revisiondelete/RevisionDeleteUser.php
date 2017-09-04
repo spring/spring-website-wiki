@@ -33,17 +33,17 @@ class RevisionDeleteUser {
 
 	/**
 	 * Update *_deleted bitfields in various tables to hide or unhide usernames
-	 * @param $name String username
-	 * @param $userId Int user id
-	 * @param $op String operator '|' or '&'
-	 * @param $dbw null|DatabaseBase, if you happen to have one lying around
+	 * @param string $name Username
+	 * @param int $userId User id
+	 * @param string $op Operator '|' or '&'
+	 * @param null|IDatabase $dbw If you happen to have one lying around
 	 * @return bool
 	 */
 	private static function setUsernameBitfields( $name, $userId, $op, $dbw ) {
 		if ( !$userId || ( $op !== '|' && $op !== '&' ) ) {
 			return false; // sanity check
 		}
-		if ( !$dbw instanceof DatabaseBase ) {
+		if ( !$dbw instanceof IDatabase ) {
 			$dbw = wfGetDB( DB_MASTER );
 		}
 
@@ -55,8 +55,8 @@ class RevisionDeleteUser {
 		$delUser = Revision::DELETED_USER | Revision::DELETED_RESTRICTED;
 		$delAction = LogPage::DELETED_ACTION | Revision::DELETED_RESTRICTED;
 		if ( $op == '&' ) {
-			$delUser = "~{$delUser}";
-			$delAction = "~{$delAction}";
+			$delUser = $dbw->bitNot( $delUser );
+			$delAction = $dbw->bitNot( $delAction );
 		}
 
 		# Normalize user name
@@ -66,64 +66,70 @@ class RevisionDeleteUser {
 		# Hide name from live edits
 		$dbw->update(
 			'revision',
-			array( "rev_deleted = rev_deleted $op $delUser" ),
-			array( 'rev_user' => $userId ),
+			[ self::buildSetBitDeletedField( 'rev_deleted', $op, $delUser, $dbw ) ],
+			[ 'rev_user' => $userId ],
 			__METHOD__ );
 
 		# Hide name from deleted edits
 		$dbw->update(
 			'archive',
-			array( "ar_deleted = ar_deleted $op $delUser" ),
-			array( 'ar_user_text' => $name ),
+			[ self::buildSetBitDeletedField( 'ar_deleted', $op, $delUser, $dbw ) ],
+			[ 'ar_user_text' => $name ],
 			__METHOD__
 		);
 
 		# Hide name from logs
 		$dbw->update(
 			'logging',
-			array( "log_deleted = log_deleted $op $delUser" ),
-			array( 'log_user' => $userId, "log_type != 'suppress'" ),
+			[ self::buildSetBitDeletedField( 'log_deleted', $op, $delUser, $dbw ) ],
+			[ 'log_user' => $userId, 'log_type != ' . $dbw->addQuotes( 'suppress' ) ],
 			__METHOD__
 		);
 		$dbw->update(
 			'logging',
-			array( "log_deleted = log_deleted $op $delAction" ),
-			array( 'log_namespace' => NS_USER, 'log_title' => $userDbKey,
-				"log_type != 'suppress'" ),
+			[ self::buildSetBitDeletedField( 'log_deleted', $op, $delAction, $dbw ) ],
+			[ 'log_namespace' => NS_USER, 'log_title' => $userDbKey,
+				'log_type != ' . $dbw->addQuotes( 'suppress' ) ],
 			__METHOD__
 		);
 
 		# Hide name from RC
 		$dbw->update(
 			'recentchanges',
-			array( "rc_deleted = rc_deleted $op $delUser" ),
-			array( 'rc_user_text' => $name ),
+			[ self::buildSetBitDeletedField( 'rc_deleted', $op, $delUser, $dbw ) ],
+			[ 'rc_user_text' => $name ],
 			__METHOD__
 		);
 		$dbw->update(
 			'recentchanges',
-			array( "rc_deleted = rc_deleted $op $delAction" ),
-			array( 'rc_namespace' => NS_USER, 'rc_title' => $userDbKey, 'rc_logid > 0' ),
+			[ self::buildSetBitDeletedField( 'rc_deleted', $op, $delAction, $dbw ) ],
+			[ 'rc_namespace' => NS_USER, 'rc_title' => $userDbKey, 'rc_logid > 0' ],
 			__METHOD__
 		);
 
 		# Hide name from live images
 		$dbw->update(
 			'oldimage',
-			array( "oi_deleted = oi_deleted $op $delUser" ),
-			array( 'oi_user_text' => $name ),
+			[ self::buildSetBitDeletedField( 'oi_deleted', $op, $delUser, $dbw ) ],
+			[ 'oi_user_text' => $name ],
 			__METHOD__
 		);
 
 		# Hide name from deleted images
 		$dbw->update(
 			'filearchive',
-			array( "fa_deleted = fa_deleted $op $delUser" ),
-			array( 'fa_user_text' => $name ),
+			[ self::buildSetBitDeletedField( 'fa_deleted', $op, $delUser, $dbw ) ],
+			[ 'fa_user_text' => $name ],
 			__METHOD__
 		);
 		# Done!
 		return true;
+	}
+
+	private static function buildSetBitDeletedField( $field, $op, $value, $dbw ) {
+		return $field . ' = ' . ( $op === '&'
+			? $dbw->bitAnd( $field, $value )
+			: $dbw->bitOr( $field, $value ) );
 	}
 
 	public static function suppressUserName( $name, $userId, $dbw = null ) {

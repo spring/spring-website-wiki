@@ -1,8 +1,7 @@
 <?php
 /** Newari (नेपाल भाषा)
  *
- * See MessagesQqq.php for message documentation incl. usage of parameters
- * To improve a translation please visit http://translatewiki.net
+ * To improve a translation please visit https://translatewiki.net
  *
  * @ingroup Language
  * @file
@@ -11,7 +10,7 @@
  * @author आलोक
  */
 
-$namespaceNames = array(
+$namespaceNames = [
 	NS_MEDIA            => 'माध्यम',
 	NS_SPECIAL          => 'विशेष',
 	NS_TALK             => 'खँलाबँला',
@@ -26,9 +25,9 @@ $namespaceNames = array(
 	NS_HELP_TALK        => 'ग्वाहालि_खँलाबँला',
 	NS_CATEGORY         => 'पुचः',
 	NS_CATEGORY_TALK    => 'पुचः_खँलाबँला',
-);
+];
 
-$digitTransformTable = array(
+$digitTransformTable = [
 	'0' => '०', # &#x0966;
 	'1' => '१', # &#x0967;
 	'2' => '२', # &#x0968;
@@ -39,5 +38,5 @@ $digitTransformTable = array(
 	'7' => '७', # &#x096d;
 	'8' => '८', # &#x096e;
 	'9' => '९', # &#x096f;
-);
+];
 

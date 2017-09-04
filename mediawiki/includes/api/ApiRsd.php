@@ -37,12 +37,15 @@ class ApiRsd extends ApiBase {
 		$result->addValue( null, 'version', '1.0' );
 		$result->addValue( null, 'xmlns', 'http://archipelago.phrasewise.com/rsd' );
 
-		$service = array( 'apis' => $this->formatRsdApiList() );
-		ApiResult::setContent( $service, 'MediaWiki', 'engineName' );
-		ApiResult::setContent( $service, 'https://www.mediawiki.org/', 'engineLink' );
-		ApiResult::setContent( $service, Title::newMainPage()->getCanonicalURL(), 'homePageLink' );
+		$service = [
+			'apis' => $this->formatRsdApiList(),
+			'engineName' => 'MediaWiki',
+			'engineLink' => 'https://www.mediawiki.org/',
+			'homePageLink' => Title::newMainPage()->getCanonicalURL(),
+		];
 
-		$result->setIndexedTagName( $service['apis'], 'api' );
+		ApiResult::setSubelementsList( $service, [ 'engineName', 'engineLink', 'homePageLink' ] );
+		ApiResult::setIndexedTagName( $service['apis'], 'api' );
 
 		$result->addValue( null, 'service', $service );
 	}
@@ -51,22 +54,15 @@ class ApiRsd extends ApiBase {
 		return new ApiFormatXmlRsd( $this->getMain(), 'xml' );
 	}
 
-	public function getAllowedParams() {
-		return array();
+	protected function getExamplesMessages() {
+		return [
+			'action=rsd'
+				=> 'apihelp-rsd-example-simple',
+		];
 	}
 
-	public function getParamDescription() {
-		return array();
-	}
-
-	public function getDescription() {
-		return 'Export an RSD (Really Simple Discovery) schema.';
-	}
-
-	public function getExamples() {
-		return array(
-			'api.php?action=rsd'
-		);
+	public function isReadMode() {
+		return false;
 	}
 
 	/**
@@ -87,8 +83,8 @@ class ApiRsd extends ApiBase {
 	 * @return array
 	 */
 	protected function getRsdApiList() {
-		$apis = array(
-			'MediaWiki' => array(
+		$apis = [
+			'MediaWiki' => [
 				// The API link is required for all RSD API entries.
 				'apiLink' => wfExpandUrl( wfScript( 'api' ), PROTO_CURRENT ),
 
@@ -99,14 +95,14 @@ class ApiRsd extends ApiBase {
 				'blogID' => '',
 
 				// Additional settings are optional.
-				'settings' => array(
+				'settings' => [
 					// Change this to true in the future as an aid to
 					// machine discovery of OAuth for API access.
 					'OAuth' => false,
-				)
-			),
-		);
-		wfRunHooks( 'ApiRsdServiceApis', array( &$apis ) );
+				]
+			],
+		];
+		Hooks::run( 'ApiRsdServiceApis', [ &$apis ] );
 
 		return $apis;
 	}
@@ -120,17 +116,18 @@ class ApiRsd extends ApiBase {
 	protected function formatRsdApiList() {
 		$apis = $this->getRsdApiList();
 
-		$outputData = array();
+		$outputData = [];
 		foreach ( $apis as $name => $info ) {
-			$data = array(
+			$data = [
 				'name' => $name,
 				'preferred' => wfBoolToStr( $name == 'MediaWiki' ),
 				'apiLink' => $info['apiLink'],
 				'blogID' => isset( $info['blogID'] ) ? $info['blogID'] : '',
-			);
-			$settings = array();
+			];
+			$settings = [];
 			if ( isset( $info['docs'] ) ) {
-				ApiResult::setContent( $settings, $info['docs'], 'docs' );
+				$settings['docs'] = $info['docs'];
+				ApiResult::setSubelementsList( $settings, 'docs' );
 			}
 			if ( isset( $info['settings'] ) ) {
 				foreach ( $info['settings'] as $setting => $val ) {
@@ -139,13 +136,13 @@ class ApiRsd extends ApiBase {
 					} else {
 						$xmlVal = $val;
 					}
-					$setting = array( 'name' => $setting );
-					ApiResult::setContent( $setting, $xmlVal );
+					$setting = [ 'name' => $setting ];
+					ApiResult::setContentValue( $setting, 'value', $xmlVal );
 					$settings[] = $setting;
 				}
 			}
 			if ( count( $settings ) ) {
-				$this->getResult()->setIndexedTagName( $settings, 'setting' );
+				ApiResult::setIndexedTagName( $settings, 'setting' );
 				$data['settings'] = $settings;
 			}
 			$outputData[] = $data;
@@ -156,12 +153,17 @@ class ApiRsd extends ApiBase {
 }
 
 class ApiFormatXmlRsd extends ApiFormatXml {
-	public function __construct( $main, $format ) {
+	public function __construct( ApiMain $main, $format ) {
 		parent::__construct( $main, $format );
 		$this->setRootElement( 'rsd' );
 	}
 
 	public function getMimeType() {
 		return 'application/rsd+xml';
+	}
+
+	public static function recXmlPrint( $name, $value, $indent, $attributes = [] ) {
+		unset( $attributes['_idx'] );
+		return parent::recXmlPrint( $name, $value, $indent, $attributes );
 	}
 }

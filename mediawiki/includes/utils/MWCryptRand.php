@@ -44,16 +44,6 @@ class MWCryptRand {
 	protected static $singleton = null;
 
 	/**
-	 * The hash algorithm being used
-	 */
-	protected $algo = null;
-
-	/**
-	 * The number of bytes outputted by the hash algorithm
-	 */
-	protected $hashLength = null;
-
-	/**
 	 * A boolean indicating whether the previous random generation was done using
 	 * cryptographically strong random number generator or not.
 	 */
@@ -61,6 +51,7 @@ class MWCryptRand {
 
 	/**
 	 * Initialize an initial random state based off of whatever we can find
+	 * @return string
 	 */
 	protected function initialRandomState() {
 		// $_SERVER contains a variety of unstable user and system specific information
@@ -76,7 +67,7 @@ class MWCryptRand {
 		$state .= rand() . uniqid( mt_rand(), true );
 
 		// Include some information about the filesystem's current state in the random state
-		$files = array();
+		$files = [];
 
 		// We know this file is here so grab some info about ourselves
 		$files[] = __FILE__;
@@ -95,9 +86,9 @@ class MWCryptRand {
 		}
 
 		foreach ( $files as $file ) {
-			wfSuppressWarnings();
+			MediaWiki\suppressWarnings();
 			$stat = stat( $file );
-			wfRestoreWarnings();
+			MediaWiki\restoreWarnings();
 			if ( $stat ) {
 				// stat() duplicates data into numeric and string keys so kill off all the numeric ones
 				foreach ( $stat as $k => $v ) {
@@ -106,7 +97,8 @@ class MWCryptRand {
 					}
 				}
 				// The absolute filename itself will differ from install to install so don't leave it out
-				if ( ( $path = realpath( $file ) ) !== false ) {
+				$path = realpath( $file );
+				if ( $path !== false ) {
 					$state .= $path;
 				} else {
 					$state .= $file;
@@ -134,12 +126,10 @@ class MWCryptRand {
 		// It's mostly worthless but throw the wiki's id into the data for a little more variance
 		$state .= wfWikiID();
 
-		// If we have a secret key or proxy key set then throw it into the state as well
-		global $wgSecretKey, $wgProxyKey;
+		// If we have a secret key set then throw it into the state as well
+		global $wgSecretKey;
 		if ( $wgSecretKey ) {
 			$state .= $wgSecretKey;
-		} elseif ( $wgProxyKey ) {
-			$state .= $wgProxyKey;
 		}
 
 		return $state;
@@ -149,7 +139,7 @@ class MWCryptRand {
 	 * Randomly hash data while mixing in clock drift data for randomness
 	 *
 	 * @param string $data The data to randomly hash.
-	 * @return String The hashed bytes
+	 * @return string The hashed bytes
 	 * @author Tim Starling
 	 */
 	protected function driftHash( $data ) {
@@ -157,7 +147,7 @@ class MWCryptRand {
 		// loop to gather little entropy)
 		$minIterations = self::MIN_ITERATIONS;
 		// Duration of time to spend doing calculations (in seconds)
-		$duration = ( self::MSEC_PER_BYTE / 1000 ) * $this->hashLength();
+		$duration = ( self::MSEC_PER_BYTE / 1000 ) * MWCryptHash::hashLength();
 		// Create a buffer to use to trigger memory operations
 		$bufLength = 10000000;
 		$buffer = str_repeat( ' ', $bufLength );
@@ -184,7 +174,7 @@ class MWCryptRand {
 			$iterations++;
 		}
 		$timeTaken = $currentTime - $startTime;
-		$data = $this->hash( $data );
+		$data = MWCryptHash::hash( $data );
 
 		wfDebug( __METHOD__ . ": Clock drift calculation " .
 			"(time-taken=" . ( $timeTaken * 1000 ) . "ms, " .
@@ -204,80 +194,13 @@ class MWCryptRand {
 			// Initialize the state with whatever unstable data we can find
 			// It's important that this data is hashed right afterwards to prevent
 			// it from being leaked into the output stream
-			$state = $this->hash( $this->initialRandomState() );
+			$state = MWCryptHash::hash( $this->initialRandomState() );
 		}
 		// Generate a new random state based on the initial random state or previous
 		// random state by combining it with clock drift
 		$state = $this->driftHash( $state );
 
 		return $state;
-	}
-
-	/**
-	 * Decide on the best acceptable hash algorithm we have available for hash()
-	 * @throws MWException
-	 * @return String A hash algorithm
-	 */
-	protected function hashAlgo() {
-		if ( !is_null( $this->algo ) ) {
-			return $this->algo;
-		}
-
-		$algos = hash_algos();
-		$preference = array( 'whirlpool', 'sha256', 'sha1', 'md5' );
-
-		foreach ( $preference as $algorithm ) {
-			if ( in_array( $algorithm, $algos ) ) {
-				$this->algo = $algorithm;
-				wfDebug( __METHOD__ . ": Using the {$this->algo} hash algorithm.\n" );
-
-				return $this->algo;
-			}
-		}
-
-		// We only reach here if no acceptable hash is found in the list, this should
-		// be a technical impossibility since most of php's hash list is fixed and
-		// some of the ones we list are available as their own native functions
-		// But since we already require at least 5.2 and hash() was default in
-		// 5.1.2 we don't bother falling back to methods like sha1 and md5.
-		throw new MWException( "Could not find an acceptable hashing function in hash_algos()" );
-	}
-
-	/**
-	 * Return the byte-length output of the hash algorithm we are
-	 * using in self::hash and self::hmac.
-	 *
-	 * @return int Number of bytes the hash outputs
-	 */
-	protected function hashLength() {
-		if ( is_null( $this->hashLength ) ) {
-			$this->hashLength = strlen( $this->hash( '' ) );
-		}
-
-		return $this->hashLength;
-	}
-
-	/**
-	 * Generate an acceptably unstable one-way-hash of some text
-	 * making use of the best hash algorithm that we have available.
-	 *
-	 * @param $data string
-	 * @return String A raw hash of the data
-	 */
-	protected function hash( $data ) {
-		return hash( $this->hashAlgo(), $data, true );
-	}
-
-	/**
-	 * Generate an acceptably unstable one-way-hmac of some text
-	 * making use of the best hash algorithm that we have available.
-	 *
-	 * @param $data string
-	 * @param $key string
-	 * @return String A raw hash of the data
-	 */
-	protected function hmac( $data, $key ) {
-		return hash_hmac( $this->hashAlgo(), $data, $key, true );
 	}
 
 	/**
@@ -295,7 +218,6 @@ class MWCryptRand {
 	 * @see self::generate()
 	 */
 	public function realGenerate( $bytes, $forceStrong = false ) {
-		wfProfileIn( __METHOD__ );
 
 		wfDebug( __METHOD__ . ": Generating cryptographic random bytes for " .
 			wfGetAllCallers( 5 ) . "\n" );
@@ -315,7 +237,6 @@ class MWCryptRand {
 			// entropy so this is also preferable to just trying to read urandom because it may work
 			// on Windows systems as well.
 			if ( function_exists( 'mcrypt_create_iv' ) ) {
-				wfProfileIn( __METHOD__ . '-mcrypt' );
 				$rem = $bytes - strlen( $buffer );
 				$iv = mcrypt_create_iv( $rem, MCRYPT_DEV_URANDOM );
 				if ( $iv === false ) {
@@ -325,20 +246,11 @@ class MWCryptRand {
 					wfDebug( __METHOD__ . ": mcrypt_create_iv generated " . strlen( $iv ) .
 						" bytes of randomness.\n" );
 				}
-				wfProfileOut( __METHOD__ . '-mcrypt' );
 			}
 		}
 
 		if ( strlen( $buffer ) < $bytes ) {
-			// If available make use of openssl's random_pseudo_bytes method to
-			// attempt to generate randomness. However don't do this on Windows
-			// with PHP < 5.3.4 due to a bug:
-			// http://stackoverflow.com/questions/1940168/openssl-random-pseudo-bytes-is-slow-php
-			// http://git.php.net/?p=php-src.git;a=commitdiff;h=cd62a70863c261b07f6dadedad9464f7e213cad5
-			if ( function_exists( 'openssl_random_pseudo_bytes' )
-				&& ( !wfIsWindows() || version_compare( PHP_VERSION, '5.3.4', '>=' ) )
-			) {
-				wfProfileIn( __METHOD__ . '-openssl' );
+			if ( function_exists( 'openssl_random_pseudo_bytes' ) ) {
 				$rem = $bytes - strlen( $buffer );
 				$openssl_bytes = openssl_random_pseudo_bytes( $rem, $openssl_strong );
 				if ( $openssl_bytes === false ) {
@@ -354,7 +266,6 @@ class MWCryptRand {
 					// using it use it's say on whether the randomness is strong
 					$this->strong = !!$openssl_strong;
 				}
-				wfProfileOut( __METHOD__ . '-openssl' );
 			}
 		}
 
@@ -362,7 +273,6 @@ class MWCryptRand {
 		if ( strlen( $buffer ) < $bytes &&
 			( function_exists( 'stream_set_read_buffer' ) || $forceStrong )
 		) {
-			wfProfileIn( __METHOD__ . '-fopen-urandom' );
 			$rem = $bytes - strlen( $buffer );
 			if ( !function_exists( 'stream_set_read_buffer' ) && $forceStrong ) {
 				wfDebug( __METHOD__ . ": Was forced to read from /dev/urandom " .
@@ -370,9 +280,9 @@ class MWCryptRand {
 			}
 			// /dev/urandom is generally considered the best possible commonly
 			// available random source, and is available on most *nix systems.
-			wfSuppressWarnings();
+			MediaWiki\suppressWarnings();
 			$urandom = fopen( "/dev/urandom", "rb" );
-			wfRestoreWarnings();
+			MediaWiki\restoreWarnings();
 
 			// Attempt to read all our random data from urandom
 			// php's fread always does buffered reads based on the stream's chunk_size
@@ -401,7 +311,6 @@ class MWCryptRand {
 			} else {
 				wfDebug( __METHOD__ . ": /dev/urandom could not be opened.\n" );
 			}
-			wfProfileOut( __METHOD__ . '-fopen-urandom' );
 		}
 
 		// If we cannot use or generate enough data from a secure source
@@ -415,12 +324,10 @@ class MWCryptRand {
 				": Falling back to using a pseudo random state to generate randomness.\n" );
 		}
 		while ( strlen( $buffer ) < $bytes ) {
-			wfProfileIn( __METHOD__ . '-fallback' );
-			$buffer .= $this->hmac( $this->randomState(), mt_rand() );
+			$buffer .= MWCryptHash::hmac( $this->randomState(), strval( mt_rand() ) );
 			// This code is never really cryptographically strong, if we use it
 			// at all, then set strong to false.
 			$this->strong = false;
-			wfProfileOut( __METHOD__ . '-fallback' );
 		}
 
 		// Once the buffer has been filled up with enough random data to fulfill
@@ -431,8 +338,6 @@ class MWCryptRand {
 
 		wfDebug( __METHOD__ . ": " . strlen( $buffer ) .
 			" bytes of randomness leftover in the buffer.\n" );
-
-		wfProfileOut( __METHOD__ );
 
 		return $generated;
 	}
@@ -489,11 +394,11 @@ class MWCryptRand {
 	 * You can use MWCryptRand::wasStrong() if you wish to know if the source used
 	 * was cryptographically strong.
 	 *
-	 * @param int $bytes the number of bytes of random data to generate
+	 * @param int $bytes The number of bytes of random data to generate
 	 * @param bool $forceStrong Pass true if you want generate to prefer cryptographically
 	 *                          strong sources of entropy even if reading from them may steal
 	 *                          more entropy from the system than optimal.
-	 * @return String Raw binary random data
+	 * @return string Raw binary random data
 	 */
 	public static function generate( $bytes, $forceStrong = false ) {
 		return self::singleton()->realGenerate( $bytes, $forceStrong );
@@ -505,11 +410,11 @@ class MWCryptRand {
 	 * You can use MWCryptRand::wasStrong() if you wish to know if the source used
 	 * was cryptographically strong.
 	 *
-	 * @param int $chars the number of hex chars of random data to generate
+	 * @param int $chars The number of hex chars of random data to generate
 	 * @param bool $forceStrong Pass true if you want generate to prefer cryptographically
 	 *                          strong sources of entropy even if reading from them may steal
 	 *                          more entropy from the system than optimal.
-	 * @return String Hexadecimal random data
+	 * @return string Hexadecimal random data
 	 */
 	public static function generateHex( $chars, $forceStrong = false ) {
 		return self::singleton()->realGenerateHex( $chars, $forceStrong );

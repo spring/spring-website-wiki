@@ -29,7 +29,7 @@
  */
 class ApiQueryExtLinksUsage extends ApiQueryGeneratorBase {
 
-	public function __construct( $query, $moduleName ) {
+	public function __construct( ApiQuery $query, $moduleName ) {
 		parent::__construct( $query, $moduleName, 'eu' );
 	}
 
@@ -46,7 +46,7 @@ class ApiQueryExtLinksUsage extends ApiQueryGeneratorBase {
 	}
 
 	/**
-	 * @param $resultPageSet ApiPageSet
+	 * @param ApiPageSet $resultPageSet
 	 * @return void
 	 */
 	private function run( $resultPageSet = null ) {
@@ -55,17 +55,19 @@ class ApiQueryExtLinksUsage extends ApiQueryGeneratorBase {
 		$query = $params['query'];
 		$protocol = self::getProtocolPrefix( $params['protocol'] );
 
-		$this->addTables( array( 'page', 'externallinks' ) ); // must be in this order for 'USE INDEX'
+		$this->addTables( [ 'page', 'externallinks' ] ); // must be in this order for 'USE INDEX'
 		$this->addOption( 'USE INDEX', 'el_index' );
 		$this->addWhere( 'page_id=el_from' );
 
-		global $wgMiserMode;
-		$miser_ns = array();
-		if ( $wgMiserMode ) {
+		$miser_ns = [];
+		if ( $this->getConfig()->get( 'MiserMode' ) ) {
 			$miser_ns = $params['namespace'];
 		} else {
 			$this->addWhereFld( 'page_namespace', $params['namespace'] );
 		}
+
+		// Normalize query to match the normalization applied for the externallinks table
+		$query = Parser::normalizeLinkUrl( $query );
 
 		$whereQuery = $this->prepareUrlQuerySearchString( $query, $protocol );
 
@@ -79,11 +81,11 @@ class ApiQueryExtLinksUsage extends ApiQueryGeneratorBase {
 		$fld_url = isset( $prop['url'] );
 
 		if ( is_null( $resultPageSet ) ) {
-			$this->addFields( array(
+			$this->addFields( [
 				'page_id',
 				'page_namespace',
 				'page_title'
-			) );
+			] );
 			$this->addFieldsIf( 'el_to', $fld_url );
 		} else {
 			$this->addFields( $resultPageSet->getPageTableFields() );
@@ -113,7 +115,9 @@ class ApiQueryExtLinksUsage extends ApiQueryGeneratorBase {
 			}
 
 			if ( is_null( $resultPageSet ) ) {
-				$vals = array();
+				$vals = [
+					ApiResult::META_TYPE => 'assoc',
+				];
 				if ( $fld_ids ) {
 					$vals['pageid'] = intval( $row->page_id );
 				}
@@ -129,7 +133,7 @@ class ApiQueryExtLinksUsage extends ApiQueryGeneratorBase {
 					}
 					$vals['url'] = $to;
 				}
-				$fit = $result->addValue( array( 'query', $this->getModuleName() ), null, $vals );
+				$fit = $result->addValue( [ 'query', $this->getModuleName() ], null, $vals );
 				if ( !$fit ) {
 					$this->setContinueEnumParameter( 'offset', $offset + $count - 1 );
 					break;
@@ -140,48 +144,58 @@ class ApiQueryExtLinksUsage extends ApiQueryGeneratorBase {
 		}
 
 		if ( is_null( $resultPageSet ) ) {
-			$result->setIndexedTagName_internal( array( 'query', $this->getModuleName() ),
+			$result->addIndexedTagName( [ 'query', $this->getModuleName() ],
 				$this->getModulePrefix() );
 		}
 	}
 
 	public function getAllowedParams() {
-		return array(
-			'prop' => array(
+		$ret = [
+			'prop' => [
 				ApiBase::PARAM_ISMULTI => true,
 				ApiBase::PARAM_DFLT => 'ids|title|url',
-				ApiBase::PARAM_TYPE => array(
+				ApiBase::PARAM_TYPE => [
 					'ids',
 					'title',
 					'url'
-				)
-			),
-			'offset' => array(
-				ApiBase::PARAM_TYPE => 'integer'
-			),
-			'protocol' => array(
+				],
+				ApiBase::PARAM_HELP_MSG_PER_VALUE => [],
+			],
+			'offset' => [
+				ApiBase::PARAM_TYPE => 'integer',
+				ApiBase::PARAM_HELP_MSG => 'api-help-param-continue',
+			],
+			'protocol' => [
 				ApiBase::PARAM_TYPE => self::prepareProtocols(),
 				ApiBase::PARAM_DFLT => '',
-			),
+			],
 			'query' => null,
-			'namespace' => array(
+			'namespace' => [
 				ApiBase::PARAM_ISMULTI => true,
 				ApiBase::PARAM_TYPE => 'namespace'
-			),
-			'limit' => array(
+			],
+			'limit' => [
 				ApiBase::PARAM_DFLT => 10,
 				ApiBase::PARAM_TYPE => 'limit',
 				ApiBase::PARAM_MIN => 1,
 				ApiBase::PARAM_MAX => ApiBase::LIMIT_BIG1,
 				ApiBase::PARAM_MAX2 => ApiBase::LIMIT_BIG2
-			),
+			],
 			'expandurl' => false,
-		);
+		];
+
+		if ( $this->getConfig()->get( 'MiserMode' ) ) {
+			$ret['namespace'][ApiBase::PARAM_HELP_MSG_APPEND] = [
+				'api-help-param-limited-in-miser-mode',
+			];
+		}
+
+		return $ret;
 	}
 
 	public static function prepareProtocols() {
 		global $wgUrlProtocols;
-		$protocols = array( '' );
+		$protocols = [ '' ];
 		foreach ( $wgUrlProtocols as $p ) {
 			if ( $p !== '//' ) {
 				$protocols[] = substr( $p, 0, strpos( $p, ':' ) );
@@ -208,68 +222,11 @@ class ApiQueryExtLinksUsage extends ApiQueryGeneratorBase {
 		}
 	}
 
-	public function getParamDescription() {
-		global $wgMiserMode;
-		$p = $this->getModulePrefix();
-		$desc = array(
-			'prop' => array(
-				'What pieces of information to include',
-				' ids    - Adds the ID of page',
-				' title  - Adds the title and namespace ID of the page',
-				' url    - Adds the URL used in the page',
-			),
-			'offset' => 'Used for paging. Use the value returned for "continue"',
-			'protocol' => array(
-				"Protocol of the URL. If empty and {$p}query set, the protocol is http.",
-				"Leave both this and {$p}query empty to list all external links"
-			),
-			'query' => 'Search string without protocol. See [[Special:LinkSearch]]. ' .
-				'Leave empty to list all external links',
-			'namespace' => 'The page namespace(s) to enumerate.',
-			'limit' => 'How many pages to return.',
-			'expandurl' => 'Expand protocol-relative URLs with the canonical protocol',
-		);
-
-		if ( $wgMiserMode ) {
-			$desc['namespace'] = array(
-				$desc['namespace'],
-				"NOTE: Due to \$wgMiserMode, using this may result in fewer than \"{$p}limit\" results",
-				'returned before continuing; in extreme cases, zero results may be returned',
-			);
-		}
-
-		return $desc;
-	}
-
-	public function getResultProperties() {
-		return array(
-			'ids' => array(
-				'pageid' => 'integer'
-			),
-			'title' => array(
-				'ns' => 'namespace',
-				'title' => 'string'
-			),
-			'url' => array(
-				'url' => 'string'
-			)
-		);
-	}
-
-	public function getDescription() {
-		return 'Enumerate pages that contain a given URL.';
-	}
-
-	public function getPossibleErrors() {
-		return array_merge( parent::getPossibleErrors(), array(
-			array( 'code' => 'bad_query', 'info' => 'Invalid query' ),
-		) );
-	}
-
-	public function getExamples() {
-		return array(
-			'api.php?action=query&list=exturlusage&euquery=www.mediawiki.org'
-		);
+	protected function getExamplesMessages() {
+		return [
+			'action=query&list=exturlusage&euquery=www.mediawiki.org'
+				=> 'apihelp-query+exturlusage-example-simple',
+		];
 	}
 
 	public function getHelpUrls() {

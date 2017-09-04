@@ -57,14 +57,14 @@ abstract class FileJournal {
 	 *
 	 * @param array $config
 	 * @param string $backend A registered file backend name
-	 * @throws MWException
+	 * @throws Exception
 	 * @return FileJournal
 	 */
 	final public static function factory( array $config, $backend ) {
 		$class = $config['class'];
 		$jrn = new $class( $config );
 		if ( !$jrn instanceof self ) {
-			throw new MWException( "Class given is not an instance of FileJournal." );
+			throw new Exception( "Class given is not an instance of FileJournal." );
 		}
 		$jrn->backend = $backend;
 
@@ -81,9 +81,9 @@ abstract class FileJournal {
 		for ( $i = 0; $i < 5; $i++ ) {
 			$s .= mt_rand( 0, 2147483647 );
 		}
-		$s = wfBaseConvert( sha1( $s ), 16, 36, 31 );
+		$s = Wikimedia\base_convert( sha1( $s ), 16, 36, 31 );
 
-		return substr( wfBaseConvert( wfTimestamp( TS_MW ), 10, 36, 9 ) . $s, 0, 31 );
+		return substr( Wikimedia\base_convert( wfTimestamp( TS_MW ), 10, 36, 9 ) . $s, 0, 31 );
 	}
 
 	/**
@@ -132,7 +132,7 @@ abstract class FileJournal {
 	/**
 	 * Get the position ID of the latest journal entry at some point in time
 	 *
-	 * @param int|string $time timestamp
+	 * @param int|string $time Timestamp
 	 * @return int|bool
 	 */
 	final public function getPositionAtTime( $time ) {
@@ -150,9 +150,9 @@ abstract class FileJournal {
 	 * Get an array of file change log entries.
 	 * A starting change ID and/or limit can be specified.
 	 *
-	 * @param $start integer Starting change ID or null
-	 * @param $limit integer Maximum number of items to return
-	 * @param &$next string Updated to the ID of the next entry.
+	 * @param int $start Starting change ID or null
+	 * @param int $limit Maximum number of items to return
+	 * @param string &$next Updated to the ID of the next entry.
 	 * @return array List of associative arrays, each having:
 	 *     id         : unique, monotonic, ID for this change
 	 *     batch_uuid : UUID for an operation batch
@@ -224,7 +224,7 @@ class NullFileJournal extends FileJournal {
 
 	/**
 	 * @see FileJournal::doGetPositionAtTime()
-	 * @param int|string $time timestamp
+	 * @param int|string $time Timestamp
 	 * @return int|bool
 	 */
 	protected function doGetPositionAtTime( $time ) {
@@ -238,7 +238,7 @@ class NullFileJournal extends FileJournal {
 	 * @return array
 	 */
 	protected function doGetChangeEntries( $start, $limit ) {
-		return array();
+		return [];
 	}
 
 	/**

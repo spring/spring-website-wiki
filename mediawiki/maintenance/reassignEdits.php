@@ -34,7 +34,7 @@ require_once __DIR__ . '/Maintenance.php';
 class ReassignEdits extends Maintenance {
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Reassign edits from one user to another";
+		$this->addDescription( 'Reassign edits from one user to another' );
 		$this->addOption( "force", "Reassign even if the target user doesn't exist" );
 		$this->addOption( "norc", "Don't update the recent changes table" );
 		$this->addOption( "report", "Print out details of what would be changed, but don't update it" );
@@ -67,25 +67,35 @@ class ReassignEdits extends Maintenance {
 	/**
 	 * Reassign edits from one user to another
 	 *
-	 * @param $from User to take edits from
-	 * @param $to User to assign edits to
-	 * @param $rc bool Update the recent changes table
-	 * @param $report bool Don't change things; just echo numbers
-	 * @return integer Number of entries changed, or that would be changed
+	 * @param User $from User to take edits from
+	 * @param User $to User to assign edits to
+	 * @param bool $rc Update the recent changes table
+	 * @param bool $report Don't change things; just echo numbers
+	 * @return int Number of entries changed, or that would be changed
 	 */
 	private function doReassignEdits( &$from, &$to, $rc = false, $report = false ) {
-		$dbw = wfGetDB( DB_MASTER );
-		$dbw->begin( __METHOD__ );
+		$dbw = $this->getDB( DB_MASTER );
+		$this->beginTransaction( $dbw, __METHOD__ );
 
 		# Count things
 		$this->output( "Checking current edits..." );
-		$res = $dbw->select( 'revision', 'COUNT(*) AS count', $this->userConditions( $from, 'rev_user', 'rev_user_text' ), __METHOD__ );
+		$res = $dbw->select(
+			'revision',
+			'COUNT(*) AS count',
+			$this->userConditions( $from, 'rev_user', 'rev_user_text' ),
+			__METHOD__
+		);
 		$row = $dbw->fetchObject( $res );
 		$cur = $row->count;
 		$this->output( "found {$cur}.\n" );
 
 		$this->output( "Checking deleted edits..." );
-		$res = $dbw->select( 'archive', 'COUNT(*) AS count', $this->userConditions( $from, 'ar_user', 'ar_user_text' ), __METHOD__ );
+		$res = $dbw->select(
+			'archive',
+			'COUNT(*) AS count',
+			$this->userConditions( $from, 'ar_user', 'ar_user_text' ),
+			__METHOD__
+		);
 		$row = $dbw->fetchObject( $res );
 		$del = $row->count;
 		$this->output( "found {$del}.\n" );
@@ -93,7 +103,12 @@ class ReassignEdits extends Maintenance {
 		# Don't count recent changes if we're not supposed to
 		if ( $rc ) {
 			$this->output( "Checking recent changes..." );
-			$res = $dbw->select( 'recentchanges', 'COUNT(*) AS count', $this->userConditions( $from, 'rc_user', 'rc_user_text' ), __METHOD__ );
+			$res = $dbw->select(
+				'recentchanges',
+				'COUNT(*) AS count',
+				$this->userConditions( $from, 'rc_user', 'rc_user_text' ),
+				__METHOD__
+			);
 			$row = $dbw->fetchObject( $res );
 			$rec = $row->count;
 			$this->output( "found {$rec}.\n" );
@@ -124,7 +139,8 @@ class ReassignEdits extends Maintenance {
 			}
 		}
 
-		$dbw->commit( __METHOD__ );
+		$this->commitTransaction( $dbw, __METHOD__ );
+
 		return (int)$total;
 	}
 
@@ -132,32 +148,34 @@ class ReassignEdits extends Maintenance {
 	 * Return the most efficient set of user conditions
 	 * i.e. a user => id mapping, or a user_text => text mapping
 	 *
-	 * @param $user User for the condition
-	 * @param $idfield string Field name containing the identifier
-	 * @param $utfield string Field name containing the user text
+	 * @param User $user User for the condition
+	 * @param string $idfield Field name containing the identifier
+	 * @param string $utfield Field name containing the user text
 	 * @return array
 	 */
 	private function userConditions( &$user, $idfield, $utfield ) {
-		return $user->getId() ? array( $idfield => $user->getId() ) : array( $utfield => $user->getName() );
+		return $user->getId()
+			? [ $idfield => $user->getId() ]
+			: [ $utfield => $user->getName() ];
 	}
 
 	/**
 	 * Return user specifications
 	 * i.e. user => id, user_text => text
 	 *
-	 * @param $user User for the spec
-	 * @param $idfield string Field name containing the identifier
-	 * @param $utfield string Field name containing the user text
+	 * @param User $user User for the spec
+	 * @param string $idfield Field name containing the identifier
+	 * @param string $utfield Field name containing the user text
 	 * @return array
 	 */
 	private function userSpecification( &$user, $idfield, $utfield ) {
-		return array( $idfield => $user->getId(), $utfield => $user->getName() );
+		return [ $idfield => $user->getId(), $utfield => $user->getName() ];
 	}
 
 	/**
 	 * Initialise the user object
 	 *
-	 * @param $username string Username or IP address
+	 * @param string $username Username or IP address
 	 * @return User
 	 */
 	private function initialiseUser( $username ) {
@@ -172,6 +190,7 @@ class ReassignEdits extends Maintenance {
 			}
 		}
 		$user->load();
+
 		return $user;
 	}
 }

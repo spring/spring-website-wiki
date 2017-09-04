@@ -32,7 +32,7 @@ require_once __DIR__ . '/Maintenance.php';
 class RebuildAll extends Maintenance {
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Rebuild links, text index and recent changes";
+		$this->addDescription( 'Rebuild links, text index and recent changes' );
 	}
 
 	public function getDbType() {
@@ -41,8 +41,9 @@ class RebuildAll extends Maintenance {
 
 	public function execute() {
 		// Rebuild the text index
-		if ( wfGetDB( DB_SLAVE )->getType() != 'postgres' ) {
-			$this->output( "** Rebuilding fulltext search index (if you abort this will break searching; run this script again to fix):\n" );
+		if ( $this->getDB( DB_SLAVE )->getType() != 'postgres' ) {
+			$this->output( "** Rebuilding fulltext search index (if you abort "
+				. "this will break searching; run this script again to fix):\n" );
 			$rebuildText = $this->runChild( 'RebuildTextIndex', 'rebuildtextindex.php' );
 			$rebuildText->execute();
 		}
@@ -53,7 +54,8 @@ class RebuildAll extends Maintenance {
 		$rebuildRC->execute();
 
 		// Rebuild link tables
-		$this->output( "\n\n** Rebuilding links tables -- this can take a long time. It should be safe to abort via ctrl+C if you get bored.\n" );
+		$this->output( "\n\n** Rebuilding links tables -- this can take a long time. "
+			. "It should be safe to abort via ctrl+C if you get bored.\n" );
 		$rebuildLinks = $this->runChild( 'RefreshLinks', 'refreshLinks.php' );
 		$rebuildLinks->execute();
 

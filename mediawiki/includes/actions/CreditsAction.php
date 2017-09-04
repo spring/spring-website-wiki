@@ -42,7 +42,6 @@ class CreditsAction extends FormlessAction {
 	 * @return string HTML
 	 */
 	public function onView() {
-		wfProfileIn( __METHOD__ );
 
 		if ( $this->page->getID() == 0 ) {
 			$s = $this->msg( 'nocredits' )->parse();
@@ -50,9 +49,7 @@ class CreditsAction extends FormlessAction {
 			$s = $this->getCredits( -1 );
 		}
 
-		wfProfileOut( __METHOD__ );
-
-		return Html::rawElement( 'div', array( 'id' => 'mw-credits' ), $s );
+		return Html::rawElement( 'div', [ 'id' => 'mw-credits' ], $s );
 	}
 
 	/**
@@ -60,10 +57,9 @@ class CreditsAction extends FormlessAction {
 	 *
 	 * @param int $cnt Maximum list of contributors to show
 	 * @param bool $showIfMax Whether to contributors if there more than $cnt
-	 * @return string html
+	 * @return string Html
 	 */
 	public function getCredits( $cnt, $showIfMax = true ) {
-		wfProfileIn( __METHOD__ );
 		$s = '';
 
 		if ( $cnt != 0 ) {
@@ -72,8 +68,6 @@ class CreditsAction extends FormlessAction {
 				$s .= ' ' . $this->getContributors( $cnt - 1, $showIfMax );
 			}
 		}
-
-		wfProfileOut( __METHOD__ );
 
 		return $s;
 	}
@@ -101,14 +95,23 @@ class CreditsAction extends FormlessAction {
 	}
 
 	/**
+	 * Whether we can display the user's real name (not a hidden pref)
+	 *
+	 * @since 1.24
+	 * @return bool
+	 */
+	protected function canShowRealUserName() {
+		$hiddenPrefs = $this->context->getConfig()->get( 'HiddenPrefs' );
+		return !in_array( 'realname', $hiddenPrefs );
+	}
+
+	/**
 	 * Get a list of contributors of $article
 	 * @param int $cnt Maximum list of contributors to show
 	 * @param bool $showIfMax Whether to contributors if there more than $cnt
-	 * @return string html
+	 * @return string Html
 	 */
 	protected function getContributors( $cnt, $showIfMax ) {
-		global $wgHiddenPrefs;
-
 		$contributors = $this->page->getContributors();
 
 		$others_link = false;
@@ -122,9 +125,9 @@ class CreditsAction extends FormlessAction {
 			}
 		}
 
-		$real_names = array();
-		$user_names = array();
-		$anon_ips = array();
+		$real_names = [];
+		$user_names = [];
+		$anon_ips = [];
 
 		# Sift for real versus user names
 		/** @var $user User */
@@ -132,7 +135,7 @@ class CreditsAction extends FormlessAction {
 			$cnt--;
 			if ( $user->isLoggedIn() ) {
 				$link = $this->link( $user );
-				if ( !in_array( 'realname', $wgHiddenPrefs ) && $user->getRealName() ) {
+				if ( $this->canShowRealUserName() && $user->getRealName() ) {
 					$real_names[] = $link;
 				} else {
 					$user_names[] = $link;
@@ -170,8 +173,8 @@ class CreditsAction extends FormlessAction {
 		}
 
 		# This is the big list, all mooshed together. We sift for blank strings
-		$fulllist = array();
-		foreach ( array( $real, $user, $anon, $others_link ) as $s ) {
+		$fulllist = [];
+		foreach ( [ $real, $user, $anon, $others_link ] as $s ) {
 			if ( $s !== false ) {
 				array_push( $fulllist, $s );
 			}
@@ -192,8 +195,7 @@ class CreditsAction extends FormlessAction {
 	 * @return string Html
 	 */
 	protected function link( User $user ) {
-		global $wgHiddenPrefs;
-		if ( !in_array( 'realname', $wgHiddenPrefs ) && !$user->isAnon() ) {
+		if ( $this->canShowRealUserName() && !$user->isAnon() ) {
 			$real = $user->getRealName();
 		} else {
 			$real = false;
@@ -216,8 +218,7 @@ class CreditsAction extends FormlessAction {
 		if ( $user->isAnon() ) {
 			return $this->msg( 'anonuser' )->rawParams( $link )->parse();
 		} else {
-			global $wgHiddenPrefs;
-			if ( !in_array( 'realname', $wgHiddenPrefs ) && $user->getRealName() ) {
+			if ( $this->canShowRealUserName() && $user->getRealName() ) {
 				return $link;
 			} else {
 				return $this->msg( 'siteuser' )->rawParams( $link )->params( $user->getName() )->escaped();
@@ -233,8 +234,8 @@ class CreditsAction extends FormlessAction {
 		return Linker::linkKnown(
 			$this->getTitle(),
 			$this->msg( 'others' )->escaped(),
-			array(),
-			array( 'action' => 'credits' )
+			[],
+			[ 'action' => 'credits' ]
 		);
 	}
 }

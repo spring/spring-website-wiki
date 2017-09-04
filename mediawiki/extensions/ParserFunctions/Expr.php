@@ -48,7 +48,7 @@ define( 'EXPR_PI', 36 );
 define( 'EXPR_FMOD', 37 );
 define( 'EXPR_SQRT' , 38 );
 
-class ExprError extends MWException {
+class ExprError extends Exception {
 	/**
 	 * @param $msg string
 	 * @param $parameter string
@@ -60,15 +60,14 @@ class ExprError extends MWException {
 		// pfunc_expr_unexpected_closing_bracket, pfunc_expr_unrecognised_punctuation,
 		// pfunc_expr_unclosed_bracket, pfunc_expr_division_by_zero, pfunc_expr_invalid_argument,
 		// pfunc_expr_invalid_argument_ln, pfunc_expr_unknown_error, pfunc_expr_not_a_number
-		$msg = wfMessage( "pfunc_expr_$msg", $parameter )->inContentLanguage()->escaped();
-		$this->message = '<strong class="error">' . $msg . '</strong>';
+		$this->message = wfMessage( "pfunc_expr_$msg", $parameter )->inContentLanguage()->text();
 	}
 }
 
 class ExprParser {
-	var $maxStackSize = 100;
+	public $maxStackSize = 100;
 
-	var $precedence = array(
+	public $precedence = array(
 		EXPR_NEGATIVE => 10,
 		EXPR_POSITIVE => 10,
 		EXPR_EXPONENT => 10,
@@ -107,7 +106,7 @@ class ExprParser {
 		EXPR_CLOSE => -1,
 	);
 
-	var $names = array(
+	public $names = array(
 		EXPR_NEGATIVE => '-',
 		EXPR_POSITIVE => '+',
 		EXPR_NOT => 'not',
@@ -144,7 +143,7 @@ class ExprParser {
 		EXPR_SQRT => 'sqrt',
 	);
 
-	var $words = array(
+	public $words = array(
 		'mod' => EXPR_MOD,
 		'fmod' => EXPR_FMOD,
 		'and' => EXPR_AND,
@@ -179,7 +178,7 @@ class ExprParser {
 	 * @throws ExprError
 	 * @return string
 	 */
-	function doExpression( $expr ) {
+	public function doExpression( $expr ) {
 		$operands = array();
 		$operators = array();
 
@@ -211,14 +210,14 @@ class ExprParser {
 				continue;
 			} elseif ( false !== strpos( EXPR_NUMBER_CLASS, $char ) ) {
 				// Number
-				if ( $expecting != 'expression' ) {
+				if ( $expecting !== 'expression' ) {
 					throw new ExprError( 'unexpected_number' );
 				}
 
 				// Find the rest of it
 				$length = strspn( $expr, EXPR_NUMBER_CLASS, $p );
 				// Convert it to float, silently removing double decimal points
-				$operands[] = floatval( substr( $expr, $p, $length ) );
+				$operands[] = (float)substr( $expr, $p, $length );
 				$p += $length;
 				$expecting = 'operator';
 				continue;
@@ -241,14 +240,14 @@ class ExprParser {
 				switch( $op ) {
 				// constant
 				case EXPR_EXPONENT:
-					if ( $expecting != 'expression' ) {
+					if ( $expecting !== 'expression' ) {
 						continue;
 					}
 					$operands[] = exp( 1 );
 					$expecting = 'operator';
 					continue 2;
 				case EXPR_PI:
-					if ( $expecting != 'expression' ) {
+					if ( $expecting !== 'expression' ) {
 						throw new ExprError( 'unexpected_number' );
 					}
 					$operands[] = pi();
@@ -269,7 +268,7 @@ class ExprParser {
 				case EXPR_TRUNC:
 				case EXPR_CEIL:
 				case EXPR_SQRT:
-					if ( $expecting != 'expression' ) {
+					if ( $expecting !== 'expression' ) {
 						throw new ExprError( 'unexpected_operator', $word );
 					}
 					$operators[] = $op;
@@ -281,15 +280,15 @@ class ExprParser {
 
 			// Next the two-character operators
 
-			elseif ( $char2 == '<=' ) {
+			elseif ( $char2 === '<=' ) {
 				$name = $char2;
 				$op = EXPR_LESSEQ;
 				$p += 2;
-			} elseif ( $char2 == '>=' ) {
+			} elseif ( $char2 === '>=' ) {
 				$name = $char2;
 				$op = EXPR_GREATEREQ;
 				$p += 2;
-			} elseif ( $char2 == '<>' || $char2 == '!=' ) {
+			} elseif ( $char2 === '<>' || $char2 === '!=' ) {
 				$name = $char2;
 				$op = EXPR_NOTEQ;
 				$p += 2;
@@ -297,9 +296,9 @@ class ExprParser {
 
 			// Finally the single-character operators
 
-			elseif ( $char == '+' ) {
+			elseif ( $char === '+' ) {
 				++$p;
-				if ( $expecting == 'expression' ) {
+				if ( $expecting === 'expression' ) {
 					// Unary plus
 					$operators[] = EXPR_POSITIVE;
 					continue;
@@ -307,9 +306,9 @@ class ExprParser {
 					// Binary plus
 					$op = EXPR_PLUS;
 				}
-			} elseif ( $char == '-' ) {
+			} elseif ( $char === '-' ) {
 				++$p;
-				if ( $expecting == 'expression' ) {
+				if ( $expecting === 'expression' ) {
 					// Unary minus
 					$operators[] = EXPR_NEGATIVE;
 					continue;
@@ -317,26 +316,26 @@ class ExprParser {
 					// Binary minus
 					$op = EXPR_MINUS;
 				}
-			} elseif ( $char == '*' ) {
+			} elseif ( $char === '*' ) {
 				$name = $char;
 				$op = EXPR_TIMES;
 				++$p;
-			} elseif ( $char == '/' ) {
+			} elseif ( $char === '/' ) {
 				$name = $char;
 				$op = EXPR_DIVIDE;
 				++$p;
-			} elseif ( $char == '^' ) {
+			} elseif ( $char === '^' ) {
 				$name = $char;
 				$op = EXPR_POW;
 				++$p;
-			} elseif ( $char == '(' )  {
-				if ( $expecting == 'operator' ) {
+			} elseif ( $char === '(' )  {
+				if ( $expecting === 'operator' ) {
 					throw new ExprError( 'unexpected_operator', '(' );
 				}
 				$operators[] = EXPR_OPEN;
 				++$p;
 				continue;
-			} elseif ( $char == ')' ) {
+			} elseif ( $char === ')' ) {
 				$lastOp = end( $operators );
 				while ( $lastOp && $lastOp != EXPR_OPEN ) {
 					$this->doOperation( $lastOp, $operands );
@@ -351,15 +350,15 @@ class ExprParser {
 				$expecting = 'operator';
 				++$p;
 				continue;
-			} elseif ( $char == '=' ) {
+			} elseif ( $char === '=' ) {
 				$name = $char;
 				$op = EXPR_EQUALITY;
 				++$p;
-			} elseif ( $char == '<' ) {
+			} elseif ( $char === '<' ) {
 				$name = $char;
 				$op = EXPR_LESS;
 				++$p;
-			} elseif ( $char == '>' ) {
+			} elseif ( $char === '>' ) {
 				$name = $char;
 				$op = EXPR_GREATER;
 				++$p;
@@ -368,7 +367,7 @@ class ExprParser {
 			}
 
 			// Binary operator processing
-			if ( $expecting == 'expression' ) {
+			if ( $expecting === 'expression' ) {
 				throw new ExprError( 'unexpected_operator', $name );
 			}
 
@@ -399,7 +398,7 @@ class ExprParser {
 	 * @param $stack array
 	 * @throws ExprError
 	 */
-	function doOperation( $op, &$stack ) {
+	public function doOperation( $op, &$stack ) {
 		switch ( $op ) {
 			case EXPR_NEGATIVE:
 				if ( count( $stack ) < 1 ) {
@@ -505,7 +504,7 @@ class ExprParser {
 				if ( count( $stack ) < 2 ) {
 					throw new ExprError( 'missing_operand', $this->names[$op] );
 				}
-				$digits = intval( array_pop( $stack ) );
+				$digits = (int)array_pop( $stack );
 				$value = array_pop( $stack );
 				$stack[] = round( $value, $digits );
 				break;

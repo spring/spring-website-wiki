@@ -33,7 +33,7 @@ class DeleteRevision extends Maintenance {
 
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Delete one or more revisions by moving them to the archive table";
+		$this->addDescription( 'Delete one or more revisions by moving them to the archive table' );
 	}
 
 	public function execute() {
@@ -42,41 +42,64 @@ class DeleteRevision extends Maintenance {
 		}
 
 		$this->output( "Deleting revision(s) " . implode( ',', $this->mArgs ) .
-						" from " . wfWikiID() . "...\n" );
-		$dbw = wfGetDB( DB_MASTER );
+			" from " . wfWikiID() . "...\n" );
+		$dbw = $this->getDB( DB_MASTER );
 
 		$affected = 0;
 		foreach ( $this->mArgs as $revID ) {
-			$dbw->insertSelect( 'archive', array( 'page', 'revision' ),
-				array(
-					'ar_namespace'  => 'page_namespace',
-					'ar_title'      => 'page_title',
-					'ar_page_id'    => 'page_id',
-					'ar_comment'    => 'rev_comment',
-					'ar_user'       => 'rev_user',
-					'ar_user_text'  => 'rev_user_text',
-					'ar_timestamp'  => 'rev_timestamp',
+			$dbw->insertSelect( 'archive', [ 'page', 'revision' ],
+				[
+					'ar_namespace' => 'page_namespace',
+					'ar_title' => 'page_title',
+					'ar_page_id' => 'page_id',
+					'ar_comment' => 'rev_comment',
+					'ar_user' => 'rev_user',
+					'ar_user_text' => 'rev_user_text',
+					'ar_timestamp' => 'rev_timestamp',
 					'ar_minor_edit' => 'rev_minor_edit',
-					'ar_rev_id'     => 'rev_id',
-					'ar_text_id'    => 'rev_text_id',
-					'ar_deleted'    => 'rev_deleted',
-					'ar_len'        => 'rev_len',
-				), array(
+					'ar_rev_id' => 'rev_id',
+					'ar_text_id' => 'rev_text_id',
+					'ar_deleted' => 'rev_deleted',
+					'ar_len' => 'rev_len',
+				],
+				[
 					'rev_id' => $revID,
 					'page_id = rev_page'
-				), __METHOD__
+				],
+				__METHOD__
 			);
 			if ( !$dbw->affectedRows() ) {
 				$this->output( "Revision $revID not found\n" );
 			} else {
 				$affected += $dbw->affectedRows();
-				$pageID = $dbw->selectField( 'revision', 'rev_page', array( 'rev_id' => $revID ), __METHOD__ );
-				$pageLatest = $dbw->selectField( 'page', 'page_latest', array( 'page_id' => $pageID ), __METHOD__ );
-				$dbw->delete( 'revision', array( 'rev_id' => $revID ) );
+				$pageID = $dbw->selectField(
+					'revision',
+					'rev_page',
+					[ 'rev_id' => $revID ],
+					__METHOD__
+				);
+				$pageLatest = $dbw->selectField(
+					'page',
+					'page_latest',
+					[ 'page_id' => $pageID ],
+					__METHOD__
+				);
+				$dbw->delete( 'revision', [ 'rev_id' => $revID ] );
 				if ( $pageLatest == $revID ) {
 					// Database integrity
-					$newLatest = $dbw->selectField( 'revision', 'rev_id', array( 'rev_page' => $pageID ), __METHOD__, array( 'ORDER BY' => 'rev_timestamp DESC' ) );
-					$dbw->update( 'page', array( 'page_latest' => $newLatest ), array( 'page_id' => $pageID ), __METHOD__ );
+					$newLatest = $dbw->selectField(
+						'revision',
+						'rev_id',
+						[ 'rev_page' => $pageID ],
+						__METHOD__,
+						[ 'ORDER BY' => 'rev_timestamp DESC' ]
+					);
+					$dbw->update(
+						'page',
+						[ 'page_latest' => $newLatest ],
+						[ 'page_id' => $pageID ],
+						__METHOD__
+					);
 				}
 			}
 		}

@@ -90,7 +90,7 @@ class RepoGroup {
 	 * Construct a group of file repositories.
 	 *
 	 * @param array $localInfo Associative array for local repo's info
-	 * @param array $foreignInfo of repository info arrays.
+	 * @param array $foreignInfo Array of repository info arrays.
 	 *   Each info array is an associative array with the 'class' member
 	 *   giving the class name. The entire array is passed to the repository
 	 *   constructor as the first parameter.
@@ -105,7 +105,7 @@ class RepoGroup {
 	 * Search repositories for an image.
 	 * You can also use wfFindFile() to do this.
 	 *
-	 * @param $title Title|string Title object or string
+	 * @param Title|string $title Title object or string
 	 * @param array $options Associative array of options:
 	 *   time:           requested time for an archived image, or false for the
 	 *                   current version. An image object will be returned which was
@@ -114,14 +114,18 @@ class RepoGroup {
 	 *   private:        If true, return restricted (deleted) files if the current
 	 *                   user is allowed to view them. Otherwise, such files will not
 	 *                   be found.
-	 *   bypassCache:    If true, do not use the process-local cache of File objects
+	 *   latest:         If true, load from the latest available data into File objects
 	 * @return File|bool False if title is not found
 	 */
-	function findFile( $title, $options = array() ) {
+	function findFile( $title, $options = [] ) {
 		if ( !is_array( $options ) ) {
 			// MW 1.15 compat
-			$options = array( 'time' => $options );
+			$options = [ 'time' => $options ];
 		}
+		if ( isset( $options['bypassCache'] ) ) {
+			$options['latest'] = $options['bypassCache']; // b/c
+		}
+
 		if ( !$this->reposInitialised ) {
 			$this->initialiseRepos();
 		}
@@ -170,7 +174,7 @@ class RepoGroup {
 	/**
 	 * Search repositories for many files at once.
 	 *
-	 * @param array $items An array of titles, or an array of findFile() options with
+	 * @param array $inputItems An array of titles, or an array of findFile() options with
 	 *    the "title" option giving the title. Example:
 	 *
 	 *     $findItem = array( 'title' => $title, 'private' => true );
@@ -183,20 +187,16 @@ class RepoGroup {
 	 *       The search title uses the input titles; the other is the final post-redirect title.
 	 *       All titles are returned as string DB keys and the inner array is associative.
 	 * @return array Map of (file name => File objects) for matches
-	 *
-	 * @param array $inputItems
-	 * @param integer $flags
-	 * @return array
 	 */
 	function findFiles( array $inputItems, $flags = 0 ) {
 		if ( !$this->reposInitialised ) {
 			$this->initialiseRepos();
 		}
 
-		$items = array();
+		$items = [];
 		foreach ( $inputItems as $item ) {
 			if ( !is_array( $item ) ) {
-				$item = array( 'title' => $item );
+				$item = [ 'title' => $item ];
 			}
 			$item['title'] = File::normalizeTitle( $item['title'] );
 			if ( $item['title'] ) {
@@ -220,8 +220,8 @@ class RepoGroup {
 
 	/**
 	 * Interface for FileRepo::checkRedirect()
-	 * @param $title Title
-	 * @return bool
+	 * @param Title $title
+	 * @return bool|Title
 	 */
 	function checkRedirect( Title $title ) {
 		if ( !$this->reposInitialised ) {
@@ -247,11 +247,11 @@ class RepoGroup {
 	 * Find an instance of the file with this key, created at the specified time
 	 * Returns false if the file does not exist.
 	 *
-	 * @param string $hash base 36 SHA-1 hash
+	 * @param string $hash Base 36 SHA-1 hash
 	 * @param array $options Option array, same as findFile()
-	 * @return File object or false if it is not found
+	 * @return File|bool File object or false if it is not found
 	 */
-	function findFileFromKey( $hash, $options = array() ) {
+	function findFileFromKey( $hash, $options = [] ) {
 		if ( !$this->reposInitialised ) {
 			$this->initialiseRepos();
 		}
@@ -272,8 +272,8 @@ class RepoGroup {
 	/**
 	 * Find all instances of files with this key
 	 *
-	 * @param string $hash base 36 SHA-1 hash
-	 * @return Array of File objects
+	 * @param string $hash Base 36 SHA-1 hash
+	 * @return File[]
 	 */
 	function findBySha1( $hash ) {
 		if ( !$this->reposInitialised ) {
@@ -292,8 +292,8 @@ class RepoGroup {
 	/**
 	 * Find all instances of files with this keys
 	 *
-	 * @param array $hashes base 36 SHA-1 hashes
-	 * @return array of array of File objects
+	 * @param array $hashes Base 36 SHA-1 hashes
+	 * @return array Array of array of File objects
 	 */
 	function findBySha1s( array $hashes ) {
 		if ( !$this->reposInitialised ) {
@@ -304,7 +304,7 @@ class RepoGroup {
 		foreach ( $this->foreignRepos as $repo ) {
 			$result = array_merge_recursive( $result, $repo->findBySha1s( $hashes ) );
 		}
-		//sort the merged (and presorted) sublist of each hash
+		// sort the merged (and presorted) sublist of each hash
 		foreach ( $result as $hash => $files ) {
 			usort( $result[$hash], 'File::compare' );
 		}
@@ -366,9 +366,12 @@ class RepoGroup {
 	 * @param array $params Optional additional parameters to pass to the function
 	 * @return bool
 	 */
-	function forEachForeignRepo( $callback, $params = array() ) {
+	function forEachForeignRepo( $callback, $params = [] ) {
+		if ( !$this->reposInitialised ) {
+			$this->initialiseRepos();
+		}
 		foreach ( $this->foreignRepos as $repo ) {
-			$args = array_merge( array( $repo ), $params );
+			$args = array_merge( [ $repo ], $params );
 			if ( call_user_func_array( $callback, $args ) ) {
 				return true;
 			}
@@ -382,6 +385,9 @@ class RepoGroup {
 	 * @return bool
 	 */
 	function hasForeignRepos() {
+		if ( !$this->reposInitialised ) {
+			$this->initialiseRepos();
+		}
 		return (bool)$this->foreignRepos;
 	}
 
@@ -395,7 +401,7 @@ class RepoGroup {
 		$this->reposInitialised = true;
 
 		$this->localRepo = $this->newRepo( $this->localInfo );
-		$this->foreignRepos = array();
+		$this->foreignRepos = [];
 		foreach ( $this->foreignInfo as $key => $info ) {
 			$this->foreignRepos[$key] = $this->newRepo( $info );
 		}
@@ -403,6 +409,8 @@ class RepoGroup {
 
 	/**
 	 * Create a repo class based on an info structure
+	 * @param array $info
+	 * @return FileRepo
 	 */
 	protected function newRepo( $info ) {
 		$class = $info['class'];
@@ -414,7 +422,7 @@ class RepoGroup {
 	 * Split a virtual URL into repo, zone and rel parts
 	 * @param string $url
 	 * @throws MWException
-	 * @return array containing repo, zone and rel
+	 * @return array Containing repo, zone and rel
 	 */
 	function splitVirtualUrl( $url ) {
 		if ( substr( $url, 0, 9 ) != 'mwrepo://' ) {

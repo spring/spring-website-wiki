@@ -103,7 +103,7 @@ class UnregisteredLocalFile extends File {
 		if ( $mime ) {
 			$this->mime = $mime;
 		}
-		$this->dims = array();
+		$this->dims = [];
 	}
 
 	/**
@@ -163,6 +163,18 @@ class UnregisteredLocalFile extends File {
 		}
 
 		return $this->handler->getImageSize( $this, $this->getLocalRefPath() );
+	}
+
+	/**
+	* @return int
+	*/
+	function getBitDepth() {
+		$gis = $this->getImageSize( $this->getLocalRefPath() );
+
+		if ( !$gis || !isset( $gis['bits'] ) ) {
+			return 0;
+		}
+		return $gis['bits'];
 	}
 
 	/**

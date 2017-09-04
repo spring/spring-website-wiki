@@ -22,6 +22,12 @@
  */
 
 class PdfHandler extends ImageHandler {
+	static $messages = array(
+		'main' => 'pdf-file-page-warning',
+		'header' => 'pdf-file-page-warning-header',
+		'info' => 'pdf-file-page-warning-info',
+		'footer' => 'pdf-file-page-warning-footer',
+	);
 
 	/**
 	 * @return bool
@@ -60,6 +66,11 @@ class PdfHandler extends ImageHandler {
 	 * @return bool
 	 */
 	function validateParam( $name, $value ) {
+		if ( $name === 'page' && trim( $value ) !== (string) intval( $value ) ) {
+			// Extra junk on the end of page, probably actually a caption
+			// e.g. [[File:Foo.pdf|thumb|Page 3 of the document shows foo]]
+			return false;
+		}
 		if ( in_array( $name, array( 'width', 'height', 'page' ) ) ) {
 			return ( $value > 0 );
 		}
@@ -133,7 +144,7 @@ class PdfHandler extends ImageHandler {
 	 * @return MediaTransformError|MediaTransformOutput|ThumbnailImage|TransformParameterError
 	 */
 	function doTransform( $image, $dstPath, $dstUrl, $params, $flags = 0 ) {
-		global $wgPdfProcessor, $wgPdfPostProcessor, $wgPdfHandlerDpi;
+		global $wgPdfProcessor, $wgPdfPostProcessor, $wgPdfHandlerDpi, $wgPdfHandlerJpegQuality;
 
 		$metadata = $image->getMetadata();
 
@@ -201,6 +212,8 @@ class PdfHandler extends ImageHandler {
 			$wgPdfPostProcessor,
 			"-depth",
 			"8",
+			"-quality",
+			$wgPdfHandlerJpegQuality,
 			"-resize",
 			$width,
 			"-",
@@ -259,11 +272,14 @@ class PdfHandler extends ImageHandler {
 			return false;
 		}
 
-		wfProfileIn( __METHOD__ );
-		wfSuppressWarnings();
-		$image->pdfMetaArray = unserialize( $metadata );
-		wfRestoreWarnings();
-		wfProfileOut( __METHOD__ );
+		$work = new PoolCounterWorkViaCallback( 'PdfHandler-unserialize-metadata', $image->getName(), array(
+			'doWork' => function() use ( $image, $metadata ) {
+				wfSuppressWarnings();
+				$image->pdfMetaArray = unserialize( $metadata );
+				wfRestoreWarnings();
+			},
+		) );
+		$work->execute();
 
 		return $image->pdfMetaArray;
 	}
@@ -319,9 +335,10 @@ class PdfHandler extends ImageHandler {
 
 	/**
 	 * @param $image File
+	 * @param bool|IContextSource $context Context to use (optional)
 	 * @return bool|int
 	 */
-	function formatMetadata( $image ) {
+	function formatMetadata( $image, $context = false ) {
 		$meta = $image->getMetadata();
 
 		if ( !$meta ) {
@@ -339,14 +356,14 @@ class PdfHandler extends ImageHandler {
 		}
 
 		// Inherited from MediaHandler.
-		return $this->formatMetadataHelper( $meta['mergedMetadata'] );
+		return $this->formatMetadataHelper( $meta['mergedMetadata'], $context );
 	}
 
 	/**
-	 * @param $image
+	 * @param File $image
 	 * @return bool|int
 	 */
-	function pageCount( $image ) {
+	function pageCount( File $image ) {
 		$data = $this->getMetaArray( $image );
 		if ( !$data || !isset( $data['Pages'] ) ) {
 			return false;
@@ -359,7 +376,7 @@ class PdfHandler extends ImageHandler {
 	 * @param $page int
 	 * @return array|bool
 	 */
-	function getPageDimensions( $image, $page ) {
+	function getPageDimensions( File $image, $page ) {
 		$data = $this->getMetaArray( $image );
 		return PdfImage::getPageSize( $data, $page );
 	}
@@ -369,7 +386,7 @@ class PdfHandler extends ImageHandler {
 	 * @param $page int
 	 * @return bool
 	 */
-	function getPageText( $image, $page ) {
+	function getPageText( File $image, $page ) {
 		$data = $this->getMetaArray( $image, true );
 		if ( !$data || !isset( $data['text'] ) || !isset( $data['text'][$page - 1] ) ) {
 			return false;
@@ -377,4 +394,27 @@ class PdfHandler extends ImageHandler {
 		return $data['text'][$page - 1];
 	}
 
+	/**
+	 * Adds a warning about PDFs being potentially dangerous to the file
+	 * page. Multiple messages with this base will be used.
+	 * @param File $file
+	 * @return array
+	 */
+	function getWarningConfig( $file ) {
+		return array(
+			'messages' => self::$messages,
+			'link' => '//www.mediawiki.org/wiki/Special:MyLanguage/Help:Security/PDF_files',
+			'module' => 'pdfhandler.messages',
+		);
+	}
+
+	/**
+	 * Register a module with the warning messages in it.
+	 * @param &$resourceLoader ResourceLoader
+	 */
+	static function registerWarningModule( &$resourceLoader ) {
+		$resourceLoader->register( 'pdfhandler.messages', array(
+			'messages' => array_values( self::$messages ),
+		) );
+	}
 }

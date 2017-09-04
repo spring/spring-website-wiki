@@ -38,6 +38,10 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 		parent::__construct( 'Emailuser' );
 	}
 
+	public function doesWrites() {
+		return true;
+	}
+
 	public function getDescription() {
 		$target = self::getTarget( $this->mTarget );
 		if ( !$target instanceof User ) {
@@ -48,8 +52,8 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 	}
 
 	protected function getFormFields() {
-		return array(
-			'From' => array(
+		return [
+			'From' => [
 				'type' => 'info',
 				'raw' => 1,
 				'default' => Linker::link(
@@ -58,8 +62,8 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 				),
 				'label-message' => 'emailfrom',
 				'id' => 'mw-emailuser-sender',
-			),
-			'To' => array(
+			],
+			'To' => [
 				'type' => 'info',
 				'raw' => 1,
 				'default' => Linker::link(
@@ -68,12 +72,12 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 				),
 				'label-message' => 'emailto',
 				'id' => 'mw-emailuser-recipient',
-			),
-			'Target' => array(
+			],
+			'Target' => [
 				'type' => 'hidden',
 				'default' => $this->mTargetObj->getName(),
-			),
-			'Subject' => array(
+			],
+			'Subject' => [
 				'type' => 'text',
 				'default' => $this->msg( 'defemailsubject',
 					$this->getUser()->getName() )->inContentLanguage()->text(),
@@ -81,20 +85,20 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 				'maxlength' => 200,
 				'size' => 60,
 				'required' => true,
-			),
-			'Text' => array(
+			],
+			'Text' => [
 				'type' => 'textarea',
 				'rows' => 20,
 				'cols' => 80,
 				'label-message' => 'emailmessage',
 				'required' => true,
-			),
-			'CCMe' => array(
+			],
+			'CCMe' => [
 				'type' => 'check',
 				'label-message' => 'emailccme',
 				'default' => $this->getUser()->getBoolOption( 'ccmeonemails' ),
-			),
-		);
+			],
+		];
 	}
 
 	public function execute( $par ) {
@@ -113,7 +117,8 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 		// error out if sending user cannot do this
 		$error = self::getPermissionsError(
 			$this->getUser(),
-			$this->getRequest()->getVal( 'wpEditToken' )
+			$this->getRequest()->getVal( 'wpEditToken' ),
+			$this->getConfig()
 		);
 
 		switch ( $error ) {
@@ -149,17 +154,21 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 
 		$this->mTargetObj = $ret;
 
+		// Set the 'relevant user' in the skin, so it displays links like Contributions,
+		// User logs, UserRights, etc.
+		$this->getSkin()->setRelevantUser( $this->mTargetObj );
+
 		$context = new DerivativeContext( $this->getContext() );
 		$context->setTitle( $this->getPageTitle() ); // Remove subpage
 		$form = new HTMLForm( $this->getFormFields(), $context );
 		// By now we are supposed to be sure that $this->mTarget is a user name
 		$form->addPreText( $this->msg( 'emailpagetext', $this->mTarget )->parse() );
 		$form->setSubmitTextMsg( 'emailsend' );
-		$form->setSubmitCallback( array( __CLASS__, 'uiSubmit' ) );
+		$form->setSubmitCallback( [ __CLASS__, 'uiSubmit' ] );
 		$form->setWrapperLegendMsg( 'email-legend' );
 		$form->loadData();
 
-		if ( !wfRunHooks( 'EmailUserForm', array( &$form ) ) ) {
+		if ( !Hooks::run( 'EmailUserForm', [ &$form ] ) ) {
 			return;
 		}
 
@@ -175,8 +184,8 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 	/**
 	 * Validate target User
 	 *
-	 * @param string $target target user name
-	 * @return User object on success or a string on error
+	 * @param string $target Target user name
+	 * @return User User object on success or a string on error
 	 */
 	public static function getTarget( $target ) {
 		if ( $target == '' ) {
@@ -206,14 +215,17 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 	/**
 	 * Check whether a user is allowed to send email
 	 *
-	 * @param $user User object
-	 * @param string $editToken edit token
-	 * @return null on success or string on error
+	 * @param User $user
+	 * @param string $editToken Edit token
+	 * @param Config $config optional for backwards compatibility
+	 * @return string|null Null on success or string on error
 	 */
-	public static function getPermissionsError( $user, $editToken ) {
-		global $wgEnableEmail, $wgEnableUserEmail;
-
-		if ( !$wgEnableEmail || !$wgEnableUserEmail ) {
+	public static function getPermissionsError( $user, $editToken, Config $config = null ) {
+		if ( $config === null ) {
+			wfDebug( __METHOD__ . ' called without a Config instance passed to it' );
+			$config = ConfigFactory::getDefaultInstance()->makeConfig( 'main' );
+		}
+		if ( !$config->get( 'EnableEmail' ) || !$config->get( 'EnableUserEmail' ) ) {
 			return 'usermaildisabled';
 		}
 
@@ -239,8 +251,8 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 
 		$hookErr = false;
 
-		wfRunHooks( 'UserCanSendEmail', array( &$user, &$hookErr ) );
-		wfRunHooks( 'EmailUserPermissionsErrors', array( $user, $editToken, &$hookErr ) );
+		Hooks::run( 'UserCanSendEmail', [ &$user, &$hookErr ] );
+		Hooks::run( 'EmailUserPermissionsErrors', [ $user, $editToken, &$hookErr ] );
 
 		if ( $hookErr ) {
 			return $hookErr;
@@ -252,29 +264,37 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 	/**
 	 * Form to ask for target user name.
 	 *
-	 * @param string $name user name submitted.
-	 * @return String: form asking for user name.
+	 * @param string $name User name submitted.
+	 * @return string Form asking for user name.
 	 */
 	protected function userForm( $name ) {
-		global $wgScript;
-		$string = Xml::openElement(
-			'form',
-			array( 'method' => 'get', 'action' => $wgScript, 'id' => 'askusername' )
-		) .
+		$this->getOutput()->addModules( 'mediawiki.userSuggest' );
+		$string = Html::openElement(
+				'form',
+				[ 'method' => 'get', 'action' => wfScript(), 'id' => 'askusername' ]
+			) .
 			Html::hidden( 'title', $this->getPageTitle()->getPrefixedText() ) .
-			Xml::openElement( 'fieldset' ) .
+			Html::openElement( 'fieldset' ) .
 			Html::rawElement( 'legend', null, $this->msg( 'emailtarget' )->parse() ) .
-			Xml::inputLabel(
+			Html::label(
 				$this->msg( 'emailusername' )->text(),
+				'emailusertarget'
+			) . '&#160;' .
+			Html::input(
 				'target',
-				'emailusertarget',
-				30,
-				$name
+				$name,
+				'text',
+				[
+					'id' => 'emailusertarget',
+					'class' => 'mw-autocomplete-user',  // used by mediawiki.userSuggest
+					'autofocus' => true,
+					'size' => 30,
+				]
 			) .
 			' ' .
-			Xml::submitButton( $this->msg( 'emailusernamesubmit' )->text() ) .
-			Xml::closeElement( 'fieldset' ) .
-			Xml::closeElement( 'form' ) . "\n";
+			Html::submitButton( $this->msg( 'emailusernamesubmit' )->text(), [] ) .
+			Html::closeElement( 'fieldset' ) .
+			Html::closeElement( 'form' ) . "\n";
 
 		return $string;
 	}
@@ -283,8 +303,8 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 	 * Submit callback for an HTMLForm object, will simply call submit().
 	 *
 	 * @since 1.20
-	 * @param $data array
-	 * @param $form HTMLForm object
+	 * @param array $data
+	 * @param HTMLForm $form
 	 * @return Status|string|bool
 	 */
 	public static function uiSubmit( array $data, HTMLForm $form ) {
@@ -298,11 +318,11 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 	 *
 	 * @param array $data
 	 * @param IContextSource $context
-	 * @return Mixed: Status object, or potentially a String on error
+	 * @return Status|string|bool Status object, or potentially a String on error
 	 * or maybe even true on success if anything uses the EmailUser hook.
 	 */
 	public static function submit( array $data, IContextSource $context ) {
-		global $wgUserEmailUseReplyTo;
+		$config = $context->getConfig();
 
 		$target = self::getTarget( $data['Target'] );
 		if ( !$target instanceof User ) {
@@ -310,8 +330,8 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 			return $context->msg( $target . 'text' )->parseAsBlock();
 		}
 
-		$to = new MailAddress( $target );
-		$from = new MailAddress( $context->getUser() );
+		$to = MailAddress::newFromUser( $target );
+		$from = MailAddress::newFromUser( $context->getUser() );
 		$subject = $data['Subject'];
 		$text = $data['Text'];
 
@@ -321,41 +341,45 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 			$from->name, $to->name )->inContentLanguage()->text();
 
 		$error = '';
-		if ( !wfRunHooks( 'EmailUser', array( &$to, &$from, &$subject, &$text, &$error ) ) ) {
+		if ( !Hooks::run( 'EmailUser', [ &$to, &$from, &$subject, &$text, &$error ] ) ) {
 			return $error;
 		}
 
-		if ( $wgUserEmailUseReplyTo ) {
-			// Put the generic wiki autogenerated address in the From:
-			// header and reserve the user for Reply-To.
-			//
-			// This is a bit ugly, but will serve to differentiate
-			// wiki-borne mails from direct mails and protects against
-			// SPF and bounce problems with some mailers (see below).
-			global $wgPasswordSender;
-
-			$mailFrom = new MailAddress( $wgPasswordSender,
+		if ( $config->get( 'UserEmailUseReplyTo' ) ) {
+			/**
+			 * Put the generic wiki autogenerated address in the From:
+			 * header and reserve the user for Reply-To.
+			 *
+			 * This is a bit ugly, but will serve to differentiate
+			 * wiki-borne mails from direct mails and protects against
+			 * SPF and bounce problems with some mailers (see below).
+			 */
+			$mailFrom = new MailAddress( $config->get( 'PasswordSender' ),
 				wfMessage( 'emailsender' )->inContentLanguage()->text() );
 			$replyTo = $from;
 		} else {
-			// Put the sending user's e-mail address in the From: header.
-			//
-			// This is clean-looking and convenient, but has issues.
-			// One is that it doesn't as clearly differentiate the wiki mail
-			// from "directly" sent mails.
-			//
-			// Another is that some mailers (like sSMTP) will use the From
-			// address as the envelope sender as well. For open sites this
-			// can cause mails to be flunked for SPF violations (since the
-			// wiki server isn't an authorized sender for various users'
-			// domains) as well as creating a privacy issue as bounces
-			// containing the recipient's e-mail address may get sent to
-			// the sending user.
+			/**
+			 * Put the sending user's e-mail address in the From: header.
+			 *
+			 * This is clean-looking and convenient, but has issues.
+			 * One is that it doesn't as clearly differentiate the wiki mail
+			 * from "directly" sent mails.
+			 *
+			 * Another is that some mailers (like sSMTP) will use the From
+			 * address as the envelope sender as well. For open sites this
+			 * can cause mails to be flunked for SPF violations (since the
+			 * wiki server isn't an authorized sender for various users'
+			 * domains) as well as creating a privacy issue as bounces
+			 * containing the recipient's e-mail address may get sent to
+			 * the sending user.
+			 */
 			$mailFrom = $from;
 			$replyTo = null;
 		}
 
-		$status = UserMailer::send( $to, $mailFrom, $subject, $text, $replyTo );
+		$status = UserMailer::send( $to, $mailFrom, $subject, $text, [
+			'replyTo' => $replyTo,
+		] );
 
 		if ( !$status->isGood() ) {
 			return $status;
@@ -366,15 +390,36 @@ class SpecialEmailUser extends UnlistedSpecialPage {
 			if ( $data['CCMe'] && $to != $from ) {
 				$cc_subject = $context->msg( 'emailccsubject' )->rawParams(
 					$target->getName(), $subject )->text();
-				wfRunHooks( 'EmailUserCC', array( &$from, &$from, &$cc_subject, &$text ) );
+
+				// target and sender are equal, because this is the CC for the sender
+				Hooks::run( 'EmailUserCC', [ &$from, &$from, &$cc_subject, &$text ] );
+
 				$ccStatus = UserMailer::send( $from, $from, $cc_subject, $text );
 				$status->merge( $ccStatus );
 			}
 
-			wfRunHooks( 'EmailUserComplete', array( $to, $from, $subject, $text ) );
+			Hooks::run( 'EmailUserComplete', [ $to, $from, $subject, $text ] );
 
 			return $status;
 		}
+	}
+
+	/**
+	 * Return an array of subpages beginning with $search that this special page will accept.
+	 *
+	 * @param string $search Prefix to search for
+	 * @param int $limit Maximum number of results to return (usually 10)
+	 * @param int $offset Number of results to skip (usually 0)
+	 * @return string[] Matching subpages
+	 */
+	public function prefixSearchSubpages( $search, $limit, $offset ) {
+		$user = User::newFromName( $search );
+		if ( !$user ) {
+			// No prefix suggestion for invalid user
+			return [];
+		}
+		// Autocomplete subpage as user list - public to allow caching
+		return UserNamePrefixSearch::search( 'public', $search, $limit, $offset );
 	}
 
 	protected function getGroupName() {

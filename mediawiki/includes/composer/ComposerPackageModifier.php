@@ -1,8 +1,8 @@
 <?php
 
 use Composer\Package\Link;
-use Composer\Package\LinkConstraint\VersionConstraint;
 use Composer\Package\Package;
+use Composer\Semver\Constraint\Constraint;
 
 /**
  * @licence GNU GPL v2+
@@ -16,7 +16,9 @@ class ComposerPackageModifier {
 	protected $versionNormalizer;
 	protected $versionFetcher;
 
-	public function __construct( Package $package, ComposerVersionNormalizer $versionNormalizer, MediaWikiVersionFetcher $versionFetcher ) {
+	public function __construct( Package $package,
+		ComposerVersionNormalizer $versionNormalizer, MediaWikiVersionFetcher $versionFetcher
+	) {
 		$this->package = $package;
 		$this->versionNormalizer = $versionNormalizer;
 		$this->versionFetcher = $versionFetcher;
@@ -27,7 +29,7 @@ class ComposerPackageModifier {
 	}
 
 	private function setLinkAsProvides( Link $link ) {
-		$this->package->setProvides( array( $link ) );
+		$this->package->setProvides( [ $link ] );
 	}
 
 	private function newMediaWikiLink() {
@@ -48,7 +50,10 @@ class ComposerPackageModifier {
 		$mvVersion = $this->versionFetcher->fetchVersion();
 		$mvVersion = $this->versionNormalizer->normalizeSuffix( $mvVersion );
 
-		$version = new VersionConstraint( '==', $this->versionNormalizer->normalizeLevelCount( $mvVersion ) );
+		$version = new Constraint(
+			'==',
+			$this->versionNormalizer->normalizeLevelCount( $mvVersion )
+		);
 		$version->setPrettyString( $mvVersion );
 
 		return $version;

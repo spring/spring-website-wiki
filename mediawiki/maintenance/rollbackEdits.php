@@ -33,8 +33,14 @@ require_once __DIR__ . '/Maintenance.php';
 class RollbackEdits extends Maintenance {
 	public function __construct() {
 		parent::__construct();
-		$this->mDescription = "Rollback all edits by a given user or IP provided they're the most recent edit";
-		$this->addOption( 'titles', 'A list of titles, none means all titles where the given user is the most recent', false, true );
+		$this->addDescription(
+			"Rollback all edits by a given user or IP provided they're the most recent edit" );
+		$this->addOption(
+			'titles',
+			'A list of titles, none means all titles where the given user is the most recent',
+			false,
+			true
+		);
 		$this->addOption( 'user', 'A user or IP to rollback all edits for', true, true );
 		$this->addOption( 'summary', 'Edit summary to use', false, true );
 		$this->addOption( 'bot', 'Mark the edits as bot' );
@@ -49,8 +55,8 @@ class RollbackEdits extends Maintenance {
 
 		$bot = $this->hasOption( 'bot' );
 		$summary = $this->getOption( 'summary', $this->mSelf . ' mass rollback' );
-		$titles = array();
-		$results = array();
+		$titles = [];
+		$results = [];
 		if ( $this->hasOption( 'titles' ) ) {
 			foreach ( explode( '|', $this->getOption( 'titles' ) ) as $title ) {
 				$t = Title::newFromText( $title );
@@ -66,10 +72,11 @@ class RollbackEdits extends Maintenance {
 
 		if ( !$titles ) {
 			$this->output( 'No suitable titles to be rolled back' );
+
 			return;
 		}
 
-		$doer = User::newFromName( 'Maintenance script' );
+		$doer = User::newSystemUser( 'Maintenance script', [ 'steal' => true ] );
 
 		foreach ( $titles as $t ) {
 			$page = WikiPage::factory( $t );
@@ -84,21 +91,22 @@ class RollbackEdits extends Maintenance {
 
 	/**
 	 * Get all pages that should be rolled back for a given user
-	 * @param $user String a name to check against rev_user_text
+	 * @param string $user A name to check against rev_user_text
 	 * @return array
 	 */
 	private function getRollbackTitles( $user ) {
-		$dbr = wfGetDB( DB_SLAVE );
-		$titles = array();
+		$dbr = $this->getDB( DB_SLAVE );
+		$titles = [];
 		$results = $dbr->select(
-			array( 'page', 'revision' ),
-			array( 'page_namespace', 'page_title' ),
-			array( 'page_latest = rev_id', 'rev_user_text' => $user ),
+			[ 'page', 'revision' ],
+			[ 'page_namespace', 'page_title' ],
+			[ 'page_latest = rev_id', 'rev_user_text' => $user ],
 			__METHOD__
 		);
 		foreach ( $results as $row ) {
 			$titles[] = Title::makeTitle( $row->page_namespace, $row->page_title );
 		}
+
 		return $titles;
 	}
 }

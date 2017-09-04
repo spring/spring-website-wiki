@@ -34,7 +34,7 @@ class MostinterwikisPage extends QueryPage {
 		parent::__construct( $name );
 	}
 
-	function isExpensive() {
+	public function isExpensive() {
 		return true;
 	}
 
@@ -42,36 +42,36 @@ class MostinterwikisPage extends QueryPage {
 		return false;
 	}
 
-	function getQueryInfo() {
-		return array(
-			'tables' => array(
+	public function getQueryInfo() {
+		return [
+			'tables' => [
 				'langlinks',
 				'page'
-			), 'fields' => array(
+			], 'fields' => [
 				'namespace' => 'page_namespace',
 				'title' => 'page_title',
 				'value' => 'COUNT(*)'
-			), 'conds' => array(
+			], 'conds' => [
 				'page_namespace' => MWNamespace::getContentNamespaces()
-			), 'options' => array(
+			], 'options' => [
 				'HAVING' => 'COUNT(*) > 1',
-				'GROUP BY' => array(
+				'GROUP BY' => [
 					'page_namespace',
 					'page_title'
-				)
-			), 'join_conds' => array(
-				'page' => array(
+				]
+			], 'join_conds' => [
+				'page' => [
 					'LEFT JOIN',
 					'page_id = ll_from'
-				)
-			)
-		);
+				]
+			]
+		];
 	}
 
 	/**
 	 * Pre-fill the link cache
 	 *
-	 * @param DatabaseBase $db
+	 * @param IDatabase $db
 	 * @param ResultWrapper $res
 	 */
 	function preprocessResults( $db, $res ) {
@@ -92,8 +92,8 @@ class MostinterwikisPage extends QueryPage {
 	}
 
 	/**
-	 * @param $skin Skin
-	 * @param $result
+	 * @param Skin $skin
+	 * @param object $result
 	 * @return string
 	 */
 	function formatResult( $skin, $result ) {
@@ -101,7 +101,7 @@ class MostinterwikisPage extends QueryPage {
 		if ( !$title ) {
 			return Html::element(
 				'span',
-				array( 'class' => 'mw-invalidtitle' ),
+				[ 'class' => 'mw-invalidtitle' ],
 				Linker::getInvalidTitleDescription(
 					$this->getContext(),
 					$result->namespace,
