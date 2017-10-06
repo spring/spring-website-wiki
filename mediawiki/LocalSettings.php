@@ -190,6 +190,8 @@ $wgAuth_Config['NoWikiError']    = 'You are not a member of the required phpBB g
 
 $wgAuth = new Auth_phpBB($wgAuth_Config);     // Auth_phpBB Plugin.
 
+$wgGroupPermissions['*']['autocreateaccount'] = true;
+
 #$wgDefaultSkin = 'springnew';
 
 $wgAllowDisplayTitle = true;
