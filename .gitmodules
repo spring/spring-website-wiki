@@ -1,3 +1,0 @@
-[submodule "mediawiki/extensions/Auth_phpBB"]
-	path = mediawiki/extensions/Auth_phpBB
-	url = https://github.com/Digitalroot/MediaWiki_PHPBB_Auth
