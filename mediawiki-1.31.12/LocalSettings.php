@@ -204,7 +204,6 @@ $wgGroupPermissions['*']['autocreateaccount'] = true;
 $wgAllowDisplayTitle = true;
 $wgRestrictDisplayTitle = false;
 
-#require_once( "$IP/extensions/WikiEditor/WikiEditor.php" );
 
 $wgDefaultUserOptions['usebetatoolbar'] = 1;
 $wgDefaultUserOptions['usebetatoolbar-cgd'] = 1;
@@ -219,3 +218,5 @@ $wgPFEnableStringFunctions = true;
 require_once "$IP/extensions/SyntaxHighlight_GeSHi/SyntaxHighlight_GeSHi.php";
 
 wfLoadSkin( 'MonoBook' );
+wfLoadExtension( 'WikiEditor' );
+
