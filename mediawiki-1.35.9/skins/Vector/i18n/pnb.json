@@ -1,0 +1,23 @@
+{
+	"@metadata": {
+		"authors": [
+			"Arslan",
+			"Khalid Mahmood",
+			"Abbas dhothar",
+			"Bgo eiu"
+		]
+	},
+	"vector-opt-out": "پرانی وضع اُتے پرتو",
+	"vector-action-addsection": "مضمون پاؤ",
+	"vector-action-delete": "مٹاؤ",
+	"vector-action-move": "لے چلو",
+	"vector-action-protect": "بچاؤ",
+	"vector-action-undelete": "واپس لیاؤ",
+	"vector-action-unprotect": "تبدیلی بچاؤ",
+	"vector-view-create": "بݨاؤ",
+	"vector-view-edit": "سودھو",
+	"vector-view-history": "تریخ دیکھو",
+	"vector-view-view": "پڑھو",
+	"vector-view-viewsource": "سورس ویکھو",
+	"vector-more-actions": "ہور"
+}

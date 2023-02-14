@@ -1,0 +1,16 @@
+{
+	"@metadata": {
+		"authors": [
+			"Samatics"
+		]
+	},
+	"vector-action-addsection": "Put anoda topik",
+	"vector-action-delete": "Komot-am",
+	"vector-action-move": "Muv-am",
+	"vector-action-protect": "Protet-am",
+	"vector-view-create": "Mek-am",
+	"vector-view-edit": "Chenj-am",
+	"vector-view-history": "See wetin don hapun hie",
+	"vector-view-view": "Read-am",
+	"vector-more-actions": "Si oda tins:"
+}

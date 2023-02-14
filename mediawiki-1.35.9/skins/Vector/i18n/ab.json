@@ -1,0 +1,18 @@
+{
+	"@metadata": {
+		"authors": [
+			"Temuri rajavi",
+			"Pupsik-ipa",
+			"Fraxinus.cs"
+		]
+	},
+	"vector-action-addsection": "Атема ацҵатәуп",
+	"vector-action-delete": "Ианыхтәуп",
+	"vector-action-move": "Ахьӡ аԥсахра",
+	"vector-view-create": "Арҿиара",
+	"vector-view-edit": "Аредакциазура",
+	"vector-view-history": "Аҭоурых",
+	"vector-view-view": "Аԥхьара",
+	"vector-view-viewsource": "Ахәаԥшра",
+	"vector-more-actions": "Еиҭа"
+}

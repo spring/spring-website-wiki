@@ -1,0 +1,34 @@
+{
+	"@metadata": {
+		"authors": [
+			"EugeneZelenko",
+			"Red Winged Duck",
+			"Wizardist",
+			"Nieszczarda2",
+			"Renessaince"
+		]
+	},
+	"skinname-vector": "Вэктар",
+	"vector-skin-desc": "Сучасная вэрсія MonoBook з абноўленым выглядам і шматлікімі паляпшэньнямі",
+	"prefs-vector-enable-vector-1-label": "Выкарыстаць стары Вэктар",
+	"prefs-vector-enable-vector-1-help": "Цягам наступных некалькіх гадоў мы будзем паступова абнаўляць тэму „Вэктар“. Пераемны Вэктар дазволіць вам праглядаць старую вэрсію Вэктара (паводле стану на сьнежань 2019 року). Каб даведацца пра абнаўленьні болей, зайдзіце на старонку [[mw:Reading/Web/Desktop_Improvements|нашага праекту]].",
+	"vector-opt-out": "Пераключыцца на стары выгляд",
+	"vector-opt-out-tooltip": "Зьмяніце налады, каб вярнуцца да старой тэмы (старога Вэктару)",
+	"vector.css": "/* Усе зьмешчаныя тут CSS будуць загружаныя для ўдзельнікаў, якія выкарыстоўваюць тэму афармленьня Вэктар */",
+	"vector.js": "/* Увесь зьмешчаны тут JavaScript будзе загружаны для ўдзельнікаў, якія выкарыстоўваюць тэму афармленьня Вэктар */",
+	"vector-action-toggle-sidebar": "Пераключыць бакавую панэль",
+	"vector-action-addsection": "Дадаць тэму",
+	"vector-action-delete": "Выдаліць",
+	"vector-action-move": "Перанесьці",
+	"vector-action-protect": "Абараніць",
+	"vector-action-undelete": "Аднавіць",
+	"vector-action-unprotect": "Зьмяніць абарону",
+	"vector-view-create": "Стварыць",
+	"vector-view-edit": "Рэдагаваць",
+	"vector-view-history": "Паказаць гісторыю",
+	"vector-view-view": "Чытаць",
+	"vector-view-viewsource": "Паказаць крыніцу",
+	"vector-jumptonavigation": "Перайсьці да навігацыі",
+	"vector-jumptosearch": "Перайсьці да пошуку",
+	"vector-more-actions": "Болей"
+}

@@ -1,0 +1,9 @@
+{
+	"@metadata": {
+		"authors": [
+			"Katxis",
+			"Dentonius"
+		]
+	},
+	"scribunto-lua-error": "Lua error: $2."
+}

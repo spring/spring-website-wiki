@@ -1,0 +1,34 @@
+{
+	"@metadata": {
+		"authors": [
+			"KuboF",
+			"Mirin",
+			"Objectivesea",
+			"Yekrats",
+			"Robin van der Vliet",
+			"Stefangrotz"
+		]
+	},
+	"skinname-vector": "Vektoro",
+	"vector-skin-desc": "Moderna versio de MonoBook kun freŝa aspekto kaj plibonigo de uzebleco",
+	"prefs-vector-enable-vector-1-label": "Uzu Malnova Vector",
+	"vector-opt-out": "Reveni al la malnova aspekto",
+	"vector-opt-out-tooltip": "Ŝanĝu viajn agordojn por reveni al la malnova aspekto de la etoso (malnova Vector)",
+	"vector.css": "/* Ĉiu CSS ĉi tie estos ŝarĝitaj por uzantoj de la Vector etoso */",
+	"vector.js": "/* Ĉiuj JavaScript ĉi tie estos ŝarĝita por uzantoj de la Vector etsoso /",
+	"vector-action-toggle-sidebar": "Baskuligi la flankpanelon",
+	"vector-action-addsection": "Aldoni temon",
+	"vector-action-delete": "Forigi",
+	"vector-action-move": "Alinomi",
+	"vector-action-protect": "Protekti",
+	"vector-action-undelete": "Malforigi",
+	"vector-action-unprotect": "Ŝanĝi protektadon",
+	"vector-view-create": "Krei",
+	"vector-view-edit": "Redakti",
+	"vector-view-history": "Vidi historion",
+	"vector-view-view": "Legi",
+	"vector-view-viewsource": "Vidi fonton",
+	"vector-jumptonavigation": "Salti al navigilo",
+	"vector-jumptosearch": "Salti al serĉilo",
+	"vector-more-actions": "Pli"
+}

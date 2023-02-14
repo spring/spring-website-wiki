@@ -1,0 +1,24 @@
+{
+	"@metadata": {
+		"authors": [
+			"Michawiki",
+			"J budissin"
+		]
+	},
+	"vector-opt-out": "Wróćo k staremu napohladej",
+	"vector-action-toggle-sidebar": "Bóčnicu přešaltować",
+	"vector-action-addsection": "Temu přidać",
+	"vector-action-delete": "wušmórnyć",
+	"vector-action-move": "přesunyć",
+	"vector-action-protect": "škitać",
+	"vector-action-undelete": "Wobnowić",
+	"vector-action-unprotect": "Škit wotstronić",
+	"vector-view-create": "Wutworić",
+	"vector-view-edit": "Wobdźěłać",
+	"vector-view-history": "Stawizny",
+	"vector-view-view": "Čitać",
+	"vector-view-viewsource": "Žórło sej wobhladać",
+	"vector-jumptonavigation": "K nawigaciji skočić",
+	"vector-jumptosearch": "K pytanju skočić",
+	"vector-more-actions": "Wjace"
+}

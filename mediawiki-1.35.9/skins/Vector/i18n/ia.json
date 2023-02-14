@@ -1,0 +1,29 @@
+{
+	"@metadata": {
+		"authors": [
+			"McDutchie"
+		]
+	},
+	"vector-skin-desc": "Version moderne de MonoBook con aspecto rejuvenescite e multe meliorationes de usabilitate.",
+	"prefs-vector-enable-vector-1-label": "Usar le version ancian de Vector",
+	"prefs-vector-enable-vector-1-help": "In le proxime annos nos va actualisar gradualmente le apparentia Vector. Il continua a esser possibile usar le version ancian de Vector (illo de decembre 2019). Pro leger plus sur le actualisationes, va a nostre [[mw:Reading/Web/Desktop_Improvements|pagina de projecto]].",
+	"vector-opt-out": "Cambiar al ancian apparentia",
+	"vector-opt-out-tooltip": "Cambiar tu parametros pro retornar al ancian aspecto del apparentia (Vector historic)",
+	"vector.css": "/* Tote CSS hic essera cargate pro le usatores del apparentia Vector */",
+	"vector.js": "/* Tote JavaScript hic essera cargate pro le usatores del apparentia Vector */",
+	"vector-action-toggle-sidebar": "Alternar barra lateral",
+	"vector-action-addsection": "Adder topico",
+	"vector-action-delete": "Deler",
+	"vector-action-move": "Renominar",
+	"vector-action-protect": "Proteger",
+	"vector-action-undelete": "Restaurar",
+	"vector-action-unprotect": "Cambiar protection",
+	"vector-view-create": "Crear",
+	"vector-view-edit": "Modificar",
+	"vector-view-history": "Vider historia",
+	"vector-view-view": "Leger",
+	"vector-view-viewsource": "Vider texto fonte",
+	"vector-jumptonavigation": "Saltar al navigation",
+	"vector-jumptosearch": "Saltar al recerca",
+	"vector-more-actions": "Plus"
+}
