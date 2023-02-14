@@ -1,3 +1,6 @@
 [submodule "files/extensions/Auth_phpBB"]
 	path = files/extensions/Auth_phpBB
 	url = https://github.com/Digitalroot/MediaWiki_PHPBB_Auth.git
+[submodule "files/extensions/CSS"]
+	path = files/extensions/CSS
+	url = https://github.com/wikimedia/mediawiki-extensions-CSS.git

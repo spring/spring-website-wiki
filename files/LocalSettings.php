@@ -138,7 +138,7 @@ $wgUsePathInfo = true;
 
 
 // CSS extension
-//wfLoadExtension( 'CSS.php' );
+wfLoadExtension( 'CSS' );
 
 $wgAuth_Config = array(); // Clean.
 
