@@ -4,3 +4,6 @@
 [submodule "files/extensions/CSS"]
 	path = files/extensions/CSS
 	url = https://github.com/wikimedia/mediawiki-extensions-CSS.git
+[submodule "files/extensions/PluggableAuth"]
+	path = files/extensions/PluggableAuth
+	url = https://github.com/wikimedia/mediawiki-extensions-PluggableAuth.git
